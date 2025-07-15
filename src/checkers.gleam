@@ -14,14 +14,6 @@ pub type Game {
   Game(board: Board, active_color: Color)
 }
 
-pub fn is_backward_move(active_color: board.Color, move: Move) -> Bool {
-  todo
-  // case active_color {
-  //   board.Black -> move.to < move.from
-  //   board.White -> move.to > move.from
-  // }
-}
-
 fn create_game() -> Game {
   Game(board.create(), Black)
 }
@@ -93,32 +85,6 @@ pub fn from_parsed(game: Game, parsed: move.ParsedMove) -> Result(Move, String) 
   }
 }
 
-// type Move1 {
-//   Move1(piece: board.Piece, from: Int, to: Int, captured: List(Int))
-// }
-
-// fn from_parsed1(game: Game, parsed: move.ParsedMove) -> Result(Move1, String) {
-//   use builder <- result.try(case parsed.path {
-//     [from, to] ->
-//       case is_capture_move(from, to) {
-//         True -> {
-//           from_parsed_to_capture(game, from, to, parsed.path)
-//         }
-//         False -> {
-//           from_parsed_to_simple(game, from, to)
-//         }
-//       }
-//     [from, first_to, ..] -> {
-//       from_parsed_to_capture(game, from, first_to, parsed.path)
-//     }
-//     _ -> {
-//       Error("Invalid ParsedMove")
-//     }
-//   })
-//   Move1(builder.piece, builder.from, builder.to, builder.captured)
-//   |> Ok
-// }
-
 fn is_capture_move(from: Int, to: Int) -> Bool {
   let #(from_row, from_col) = board.index_to_row_col(from)
   let #(to_row, to_col) = board.index_to_row_col(to)
@@ -131,7 +97,7 @@ fn is_valid_step(
   piece: board.Piece,
   row_diff: Int,
   col_diff: Int,
-  expected_step: Int,
+  step expected_step: Int,
 ) -> Bool {
   let abs_col = int.absolute_value(col_diff)
 
@@ -186,15 +152,8 @@ fn from_parsed_to_simple(
   let row_diff = to_row - from_row
   let col_diff = to_col - from_col
 
-  let is_valid_step = case piece {
-    board.Man(Black) -> row_diff == 1 && int.absolute_value(col_diff) == 1
-    board.Man(White) -> row_diff == -1 && int.absolute_value(col_diff) == 1
-    board.King(_) ->
-      int.absolute_value(row_diff) == 1 && int.absolute_value(col_diff) == 1
-  }
-
   use <- bool.guard(
-    !is_valid_step,
+    !is_valid_step(piece, row_diff, col_diff, step: 1),
     return: Error(
       "Invalid simple move: must be a one-square diagonal step in the correct direction",
     ),
@@ -261,15 +220,8 @@ fn from_parsed_to_capture_loop(
       let row_diff = to_row - from_row
       let col_diff = to_col - from_col
 
-      let is_valid_step = case acc.piece {
-        board.Man(Black) -> row_diff == 2 && int.absolute_value(col_diff) == 2
-        board.Man(White) -> row_diff == -2 && int.absolute_value(col_diff) == 2
-        board.King(_) ->
-          int.absolute_value(row_diff) == 2 && int.absolute_value(col_diff) == 2
-      }
-
       use <- bool.guard(
-        !is_valid_step,
+        !is_valid_step(acc.piece, row_diff, col_diff, step: 2),
         return: Error(
           "Invalid simple move: must be a two-square diagonal step in the correct direction",
         ),
@@ -387,10 +339,10 @@ pub fn main() -> Nil {
   // let assert Ok(game) = player_move(game, "a5c3")
   board.print(game.board)
   // let assert Ok(parsed) = move.parse("a5c3")
-  let assert Ok(parsed) = move.parse("a5c3e1")
+  let assert Ok(parsed) = move.parse("a5c3")
   echo parsed
   echo from_parsed(game, parsed)
-  let assert Ok(game) = player_move(game, "a5c3e1")
+  let assert Ok(game) = player_move(game, "a5c3")
   board.print(game.board)
   // let assert Ok(parsed) = move.parse("d6b4")
   // echo parsed
