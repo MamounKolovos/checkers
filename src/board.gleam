@@ -55,6 +55,13 @@ pub fn switch_color(color: Color) -> Color {
   }
 }
 
+pub fn color_to_string(color: Color) -> String {
+  case color {
+    Black -> "Black"
+    White -> "White"
+  }
+}
+
 pub type Piece {
   Man(color: Color)
   King(color: Color)

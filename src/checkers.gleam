@@ -329,25 +329,56 @@ fn find_capture_paths_loop(cs: CaptureSearch) -> List(List(Int)) {
   }
 }
 
-pub fn main() -> Nil {
+pub fn play() -> Result(Nil, String) {
   let game = create_game()
+  loop(game)
+}
+
+fn loop(game: Game) -> Result(Nil, String) {
   board.print(game.board)
-  let assert Ok(game) = player_move(game, "b6a5")
-  let assert Ok(game) = player_move(game, "c3b4")
-  let game =
-    Game(..game, board: iv.try_set(game.board, at: 30, to: board.Empty))
-  // let assert Ok(game) = player_move(game, "a5c3")
-  board.print(game.board)
+  use request <- result.try(
+    input(
+      board.color_to_string(game.active_color)
+      <> "'s turn, "
+      <> "Enter a move: ",
+    )
+    |> result.replace_error("Error reading stdin"),
+  )
+  case request {
+    "quit" | "q" | "exit" -> Ok(Nil)
+    _ -> {
+      case player_move(game, request) {
+        Ok(game) -> loop(game)
+        Error(e) -> {
+          io.println(e)
+          loop(game)
+        }
+      }
+    }
+  }
+}
+
+pub fn main() -> Nil {
+  // let game = create_game()
+  // board.print(game.board)
+  // let assert Ok(game) = player_move(game, "b6a5")
+  // let assert Ok(game) = player_move(game, "c3b4")
+  // let game =
+  //   Game(..game, board: iv.try_set(game.board, at: 30, to: board.Empty))
+  // board.print(game.board)
   // let assert Ok(parsed) = move.parse("a5c3")
-  let assert Ok(parsed) = move.parse("a5c3")
-  echo parsed
-  echo from_parsed(game, parsed)
-  let assert Ok(game) = player_move(game, "a5c3")
-  board.print(game.board)
+  // echo parsed
+  // echo from_parsed(game, parsed)
+  // let assert Ok(game) = player_move(game, "a5c3")
+  // board.print(game.board)
   // let assert Ok(parsed) = move.parse("d6b4")
   // echo parsed
   // echo from_parsed(game, parsed)
   // echo find_capture_paths(game.board, 9, board.Man(board.Black))
   // echo player_move(game, "a3b4")
+  case play() {
+    Ok(_) -> Nil
+    Error(e) -> io.println(e)
+  }
   Nil
 }
