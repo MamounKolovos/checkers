@@ -13,6 +13,29 @@ pub type ParsedMove {
   ParsedMove(path: List(Int))
 }
 
+pub fn parse(request: String) -> Result(ParsedMove, String) {
+  use path <- result.try(parse_path(string.to_graphemes(request), []))
+  ParsedMove(path:) |> Ok
+}
+
+fn parse_path(chars: List(String), path: List(Int)) -> Result(List(Int), String) {
+  case chars {
+    [file, rank, ..rest] -> {
+      use position <- result.try(parse_position(file, rank))
+      parse_path(rest, list.prepend(path, position))
+    }
+    _ -> path |> list.reverse |> Ok
+  }
+}
+
+fn parse_position(file: String, rank: String) -> Result(Int, String) {
+  use col <- result.try(parse_file(file))
+  use row <- result.try(parse_rank(rank))
+  let col_index = col - 1
+  let row_index = row - 1
+  Ok({ row_index * 8 + col_index } / 2)
+}
+
 fn parse_file(file: String) -> Result(Int, String) {
   case file {
     "a" -> Ok(1)
@@ -38,28 +61,5 @@ fn parse_rank(rank: String) -> Result(Int, String) {
     "2" -> Ok(7)
     "1" -> Ok(8)
     _ -> Error("Invalid rank: must be 1-8")
-  }
-}
-
-fn parse_position(file: String, rank: String) -> Result(Int, String) {
-  use col <- result.try(parse_file(file))
-  use row <- result.try(parse_rank(rank))
-  let col_index = col - 1
-  let row_index = row - 1
-  Ok({ row_index * 8 + col_index } / 2)
-}
-
-pub fn parse(request: String) -> Result(ParsedMove, String) {
-  use path <- result.try(parse_path(string.to_graphemes(request), []))
-  ParsedMove(path:) |> Ok
-}
-
-fn parse_path(chars: List(String), path: List(Int)) -> Result(List(Int), String) {
-  case chars {
-    [file, rank, ..rest] -> {
-      use position <- result.try(parse_position(file, rank))
-      parse_path(rest, list.prepend(path, position))
-    }
-    _ -> path |> list.reverse |> Ok
   }
 }
