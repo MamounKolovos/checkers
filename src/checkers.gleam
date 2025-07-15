@@ -8,7 +8,12 @@ import gleam/set.{type Set}
 import gleam/string
 import input.{input}
 import iv
-import move.{type Move}
+import parsed_move.{type ParsedMove}
+
+pub opaque type Move {
+  Simple(piece: board.Piece, from: Int, to: Int)
+  Capture(piece: board.Piece, from: Int, to: Int, captured: List(Int))
+}
 
 pub type Game {
   Game(board: Board, active_color: Color)
@@ -19,11 +24,11 @@ fn create_game() -> Game {
 }
 
 fn player_move(game: Game, request: String) -> Result(Game, String) {
-  use parsed_move <- result.try(move.parse(request))
+  use parsed_move <- result.try(parsed_move.parse(request))
   use move <- result.try(from_parsed(game, parsed_move))
 
   case move {
-    move.Simple(piece, from, to) -> {
+    Simple(piece, from, to) -> {
       let board =
         game.board
         |> iv.try_set(at: from, to: board.Empty)
@@ -31,7 +36,7 @@ fn player_move(game: Game, request: String) -> Result(Game, String) {
       let active_color = board.switch_color(game.active_color)
       Game(board:, active_color:) |> Ok
     }
-    move.Capture(piece, from, to, captured) -> {
+    Capture(piece, from, to, captured) -> {
       let board =
         game.board
         |> iv.try_set(at: from, to: board.Empty)
@@ -45,8 +50,8 @@ fn player_move(game: Game, request: String) -> Result(Game, String) {
   }
 }
 
-pub fn from_parsed(game: Game, parsed: move.ParsedMove) -> Result(Move, String) {
-  case parsed.path {
+pub fn from_parsed(game: Game, parsed: ParsedMove) -> Result(Move, String) {
+  case parsed_move.path(parsed) {
     [from, to] ->
       case is_capture_move(from, to) {
         True -> {
@@ -54,19 +59,14 @@ pub fn from_parsed(game: Game, parsed: move.ParsedMove) -> Result(Move, String) 
             game,
             from,
             to,
-            parsed.path,
+            parsed_move.path(parsed),
           ))
-          move.Capture(
-            builder.piece,
-            builder.from,
-            builder.to,
-            builder.captured,
-          )
+          Capture(builder.piece, builder.from, builder.to, builder.captured)
           |> Ok
         }
         False -> {
           use builder <- result.try(from_parsed_to_simple(game, from, to))
-          move.Simple(builder.piece, builder.from, builder.to) |> Ok
+          Simple(builder.piece, builder.from, builder.to) |> Ok
         }
       }
     [from, first_to, ..] -> {
@@ -74,9 +74,9 @@ pub fn from_parsed(game: Game, parsed: move.ParsedMove) -> Result(Move, String) 
         game,
         from,
         first_to,
-        parsed.path,
+        parsed_move.path(parsed),
       ))
-      move.Capture(builder.piece, builder.from, builder.to, builder.captured)
+      Capture(builder.piece, builder.from, builder.to, builder.captured)
       |> Ok
     }
     _ -> {

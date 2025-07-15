@@ -1,16 +1,13 @@
-import board
-import gleam/bool
 import gleam/list
 import gleam/result
 import gleam/string
 
-pub type Move {
-  Simple(piece: board.Piece, from: Int, to: Int)
-  Capture(piece: board.Piece, from: Int, to: Int, captured: List(Int))
+pub opaque type ParsedMove {
+  ParsedMove(path: List(Int))
 }
 
-pub type ParsedMove {
-  ParsedMove(path: List(Int))
+pub fn path(parsed_move: ParsedMove) -> List(Int) {
+  parsed_move.path
 }
 
 pub fn parse(request: String) -> Result(ParsedMove, String) {
