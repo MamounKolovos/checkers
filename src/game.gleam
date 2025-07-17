@@ -13,11 +13,17 @@ pub opaque type Move {
 }
 
 pub type Game {
-  Game(board: Board, active_color: Color)
+  Game(
+    board: Board,
+    active_color: Color,
+    white_count: Int,
+    black_count: Int,
+    is_over: Bool,
+  )
 }
 
 pub fn create() -> Game {
-  Game(board.create(), Black)
+  Game(board.create(), Black, 12, 12, False)
 }
 
 pub fn player_move(game: Game, request: String) -> Result(Game, String) {
@@ -31,7 +37,7 @@ pub fn player_move(game: Game, request: String) -> Result(Game, String) {
         |> iv.try_set(at: from, to: board.Empty)
         |> iv.try_set(at: to, to: board.Occupied(piece))
       let active_color = board.switch_color(game.active_color)
-      Game(board:, active_color:) |> Ok
+      Game(..game, board:, active_color:) |> Ok
     }
     Capture(piece, from, to, captured) -> {
       let board =
@@ -41,8 +47,20 @@ pub fn player_move(game: Game, request: String) -> Result(Game, String) {
         |> list.fold(captured, from: _, with: fn(acc, square_index) {
           iv.try_set(acc, at: square_index, to: board.Empty)
         })
-      let active_color = board.switch_color(game.active_color)
-      Game(board:, active_color:) |> Ok
+
+      let captured_count = list.length(captured)
+      let #(white_count, black_count) = case game.active_color {
+        Black -> #(game.white_count - captured_count, game.black_count)
+        White -> #(game.white_count, game.black_count - captured_count)
+      }
+
+      let is_over = white_count == 0 || black_count == 0
+      let active_color = case is_over {
+        True -> game.active_color
+        False -> board.switch_color(game.active_color)
+      }
+      Game(board:, active_color:, white_count:, black_count:, is_over:)
+      |> Ok
     }
   }
 }
