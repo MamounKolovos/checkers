@@ -6,24 +6,25 @@ import input.{input}
 
 pub fn play() -> Result(Nil, String) {
   let game = game.create()
+  board.print(game.board)
   loop(game)
 }
 
 fn loop(game: Game) -> Result(Nil, String) {
-  board.print(game.board)
   use request <- result.try(
-    input(
-      board.color_to_string(game.active_color)
-      <> "'s turn, "
-      <> "Enter a move: ",
-    )
+    game.active_color
+    |> prompt()
+    |> input()
     |> result.replace_error("Error reading stdin"),
   )
   case request {
     "quit" | "q" | "exit" -> Ok(Nil)
     _ -> {
       case game.player_move(game, request) {
-        Ok(game) -> loop(game)
+        Ok(game) -> {
+          board.print(game.board)
+          loop(game)
+        }
         Error(e) -> {
           io.println(e)
           loop(game)
@@ -31,6 +32,10 @@ fn loop(game: Game) -> Result(Nil, String) {
       }
     }
   }
+}
+
+fn prompt(active_color: board.Color) -> String {
+  board.color_to_string(active_color) <> "'s turn, Enter a move: "
 }
 
 pub fn main() -> Nil {
