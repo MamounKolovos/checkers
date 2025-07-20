@@ -1,9 +1,6 @@
-import gleam/bool
-import gleam/float
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/result
 import gleam/string
 import gleam_community/ansi
 import iv
@@ -67,22 +64,6 @@ pub type Piece {
   King(color: Color)
 }
 
-pub fn is_king(piece: Piece) -> Bool {
-  case piece {
-    King(_) -> True
-    _ -> False
-  }
-}
-
-// pub fn get_piece_color(piece: Piece) -> Color {
-//   case piece {
-//     King(White) -> White
-//     King(Black) -> Black
-//     Man(White) -> White
-//     Man(Black) -> Black
-//   }
-// }
-
 fn piece_to_str(piece: Piece) -> String {
   case piece {
     King(White) -> "O" |> ansi.blue()
@@ -113,48 +94,6 @@ fn square_to_str(square: Square) -> String {
 
 pub type Board =
   iv.Array(Square)
-
-pub fn create() -> Board {
-  use i <- iv.initialise(32)
-  let assert Ok(row) = int.floor_divide(i, 4)
-  case row {
-    0 | 1 | 2 -> Occupied(Man(Black))
-    5 | 6 | 7 -> Occupied(Man(White))
-    _ -> Empty
-  }
-}
-
-// pub fn update(board: Board) -> Board {
-//   iv.update()
-// }
-
-fn col_to_str(col: Int) -> String {
-  case col {
-    0 -> "A"
-    1 -> "B"
-    2 -> "C"
-    3 -> "D"
-    4 -> "E"
-    5 -> "F"
-    6 -> "G"
-    7 -> "H"
-    _ -> "?"
-  }
-}
-
-type DisplayConfig {
-  DisplayConfig(
-    edge_spacing: Int,
-    square_spacing: Int,
-    col_num_spacing: Int,
-    black_color: fn(String) -> String,
-    white_color: fn(String) -> String,
-  )
-}
-
-fn spacing_to_str(spacing: Int) -> String {
-  string.repeat(" ", spacing)
-}
 
 fn row_to_string(row: Int, board: Board) -> String {
   let columns =
@@ -190,13 +129,5 @@ fn to_string(board: Board) {
 }
 
 pub fn print(board: Board) {
-  // let config =
-  //   DisplayConfig(
-  //     edge_spacing: 0,
-  //     square_spacing: 1,
-  //     col_num_spacing: 1,
-  //     black_color: ansi.red,
-  //     white_color: ansi.blue,
-  //   )
   to_string(board) |> io.println()
 }

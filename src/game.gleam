@@ -1,9 +1,9 @@
 import board.{type Board, type Color, Black, White}
+import fen
 import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/result
-import gleam/set.{type Set}
 import iv
 import parsed_move.{type ParsedMove}
 
@@ -23,7 +23,34 @@ pub type Game {
 }
 
 pub fn create() -> Game {
-  Game(board.create(), Black, 12, 12, False)
+  let assert Ok(game) =
+    from_fen(
+      "B:B1,2,3,4,5,6,7,8,9,10,11,12:W21,22,23,24,25,26,27,28,29,30,31,32",
+    )
+  game
+}
+
+pub fn from_fen(fen: String) -> Result(Game, String) {
+  case fen.parse(fen) {
+    Ok(fen.ParseResult(active_color, white_squares, black_squares)) -> {
+      let board =
+        list.append(white_squares, black_squares)
+        |> list.fold(from: iv.repeat(board.Empty, 32), with: fn(board, pair) {
+          let #(number, piece) = pair
+          iv.try_set(board, at: number - 1, to: board.Occupied(piece))
+        })
+
+      Game(
+        board:,
+        active_color:,
+        white_count: list.length(white_squares),
+        black_count: list.length(black_squares),
+        is_over: False,
+      )
+      |> Ok
+    }
+    Error(e) -> Error(e)
+  }
 }
 
 pub fn player_move(game: Game, request: String) -> Result(Game, String) {
@@ -263,83 +290,6 @@ fn from_parsed_to_capture_loop(
           captured: list.prepend(acc.captured, mid_index),
         ),
       )
-    }
-  }
-}
-
-type CaptureSearch {
-  CaptureSearch(
-    board: Board,
-    position: Int,
-    path: List(Int),
-    visited: Set(Int),
-    piece: board.Piece,
-    acc: List(List(Int)),
-  )
-}
-
-fn find_capture_paths(board: Board, position: Int, piece: board.Piece) {
-  let cs =
-    CaptureSearch(
-      board:,
-      position:,
-      path: [],
-      visited: set.new(),
-      piece:,
-      acc: [],
-    )
-  find_capture_paths_loop(cs)
-}
-
-fn find_capture_paths_loop(cs: CaptureSearch) -> List(List(Int)) {
-  let #(_, col) = board.index_to_row_col(cs.position)
-
-  let next_paths =
-    case cs.piece {
-      board.Man(color) ->
-        case color {
-          board.Black -> [7, 9]
-          board.White -> [-7, -9]
-        }
-      board.King(_) -> [7, 9, -7, -9]
-    }
-    |> list.filter(fn(delta) {
-      let to = cs.position + delta
-      let inside_board = to >= 0 && to < 32
-
-      let inside_edge = case delta {
-        7 | -7 -> col <= 5
-        9 | -9 -> col >= 2
-        _ -> False
-      }
-
-      let mid = cs.position + { delta / 2 }
-      let did_capture = case iv.get_or_default(cs.board, mid, board.Empty) {
-        board.Occupied(mid_piece) -> mid_piece.color != cs.piece.color
-        board.Empty -> False
-      }
-
-      inside_board && inside_edge && did_capture
-    })
-    |> list.map(fn(delta) { cs.position + delta })
-
-  case next_paths {
-    [] ->
-      case cs.path {
-        [] -> cs.acc
-        _ -> list.prepend(cs.acc, list.reverse(cs.path))
-      }
-    _ -> {
-      list.flat_map(next_paths, fn(x) {
-        find_capture_paths_loop(
-          CaptureSearch(
-            ..cs,
-            position: x,
-            path: list.prepend(cs.path, x),
-            visited: set.insert(cs.visited, x),
-          ),
-        )
-      })
     }
   }
 }

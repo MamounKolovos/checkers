@@ -1,13 +1,12 @@
+import game
 import gleeunit
 
 pub fn main() -> Nil {
   gleeunit.main()
 }
 
-// gleeunit test functions end in `_test`
-pub fn hello_world_test() {
-  let name = "Joe"
-  let greeting = "Hello, " <> name <> "!"
-
-  assert greeting == "Hello, Joe!"
+pub fn game_over_test() {
+  let assert Ok(game) = game.from_fen("B:W18:B14")
+  let assert Ok(game) = game.player_move(game, "c5e3")
+  assert game.is_over
 }
