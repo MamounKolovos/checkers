@@ -97,29 +97,23 @@ pub fn from_parsed(game: Game, parsed: ParsedMove) -> Result(Move, String) {
     [from, to] ->
       case is_capture_move(from, to) {
         True -> {
-          use builder <- result.try(from_parsed_to_capture(
-            game,
-            from,
-            to,
-            parsed_move.path(parsed),
-          ))
-          Capture(builder.piece, builder.from, builder.to, builder.captured)
-          |> Ok
+          result.map(
+            from_parsed_to_capture(game, from, to, parsed_move.path(parsed)),
+            with: build_capture_move,
+          )
         }
         False -> {
-          use builder <- result.try(from_parsed_to_simple(game, from, to))
-          Simple(builder.piece, builder.from, builder.to) |> Ok
+          result.map(
+            from_parsed_to_simple(game, from, to),
+            with: build_simple_move,
+          )
         }
       }
     [from, first_to, ..] -> {
-      use builder <- result.try(from_parsed_to_capture(
-        game,
-        from,
-        first_to,
-        parsed_move.path(parsed),
-      ))
-      Capture(builder.piece, builder.from, builder.to, builder.captured)
-      |> Ok
+      result.map(
+        from_parsed_to_capture(game, from, first_to, parsed_move.path(parsed)),
+        with: build_capture_move,
+      )
     }
     _ -> {
       Error("Invalid ParsedMove")
@@ -153,6 +147,10 @@ fn is_valid_step(
 
 type SimpleBuilder {
   SimpleBuilder(piece: board.Piece, from: Int, to: Int)
+}
+
+fn build_simple_move(builder: SimpleBuilder) -> Move {
+  Simple(builder.piece, builder.from, builder.to)
 }
 
 fn from_parsed_to_simple(
@@ -205,6 +203,10 @@ fn from_parsed_to_simple(
 
 type CaptureBuilder {
   CaptureBuilder(piece: board.Piece, from: Int, to: Int, captured: List(Int))
+}
+
+fn build_capture_move(builder: CaptureBuilder) -> Move {
+  Capture(builder.piece, builder.from, builder.to, builder.captured)
 }
 
 fn from_parsed_to_capture(
