@@ -20,7 +20,7 @@ fn loop(game: Game) -> Result(Nil, String) {
   case request {
     "quit" | "q" | "exit" -> Ok(Nil)
     _ ->
-      case game.player_move(game, request) {
+      case game.move(game, request) {
         Ok(game) if game.is_over -> {
           io.println(board.color_to_string(game.active_color) <> " Wins!")
           Ok(Nil)

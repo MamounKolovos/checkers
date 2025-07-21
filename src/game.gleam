@@ -53,7 +53,7 @@ pub fn from_fen(fen: String) -> Result(Game, String) {
   }
 }
 
-pub fn player_move(game: Game, request: String) -> Result(Game, String) {
+pub fn move(game: Game, request: String) -> Result(Game, String) {
   use parsed_move <- result.try(parsed_move.parse(request))
   use move <- result.try(from_parsed(game, parsed_move))
 
