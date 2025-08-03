@@ -50,9 +50,7 @@ fn parse_square_numbers_loop(
   use #(number, piece, fen) <- result.try(parse_square_number(fen, color))
   let acc = list.prepend(acc, #(number, piece))
   case fen {
-    "," <> rest -> {
-      parse_square_numbers_loop(rest, color, acc)
-    }
+    "," <> rest -> parse_square_numbers_loop(rest, color, acc)
     _ -> #(list.reverse(acc), fen) |> Ok
   }
 }

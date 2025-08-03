@@ -1,62 +1,87 @@
 import gleam/list
 import gleam/result
-import gleam/string
 
 pub opaque type ParsedMove {
-  ParsedMove(path: List(Int))
+  ParsedMove(from: Int, middle: List(Int), to: Int)
 }
 
-pub fn path(parsed_move: ParsedMove) -> List(Int) {
-  parsed_move.path
+pub fn parts(parsed_move: ParsedMove) -> #(Int, List(Int), Int) {
+  #(parsed_move.from, parsed_move.middle, parsed_move.to)
 }
 
 pub fn parse(request: String) -> Result(ParsedMove, String) {
-  use path <- result.try(parse_path(string.to_graphemes(request), []))
-  ParsedMove(path:) |> Ok
+  parse_path(request)
 }
 
-fn parse_path(chars: List(String), path: List(Int)) -> Result(List(Int), String) {
-  case chars {
-    [file, rank, ..rest] -> {
-      use position <- result.try(parse_position(file, rank))
-      parse_path(rest, list.prepend(path, position))
+fn parse_path(request: String) -> Result(ParsedMove, String) {
+  parse_path_loop(request, [])
+}
+
+fn parse_path_loop(
+  request: String,
+  positions: List(Int),
+) -> Result(ParsedMove, String) {
+  case request {
+    // base case - we've finished iterating, and now all everything is within
+    // the `positions` variable
+    "" -> {
+      case positions {
+        [] -> Error("Empty Path")
+
+        // `to` represents the final destination of the path. It'll be first,
+        // because we're prepending to the list every time
+        [to, ..rest] ->
+          case list.reverse(rest) {
+            [] -> Error("Missing Destination")
+
+            // We use the new, reversed `middle` instead of `rest`, because since we
+            // prepended to the list on creation, it was backwards before.
+            [from, ..middle] -> ParsedMove(from:, middle:, to:) |> Ok
+          }
+      }
     }
-    _ -> path |> list.reverse |> Ok
+
+    // Still iterating recursively - send the current character to
+    // `parse_position`, and keep going
+    request -> {
+      use #(position, request) <- result.try(request |> parse_position())
+      parse_path_loop(request, [position, ..positions])
+    }
   }
 }
 
-fn parse_position(file: String, rank: String) -> Result(Int, String) {
-  use col <- result.try(parse_file(file))
-  use row <- result.try(parse_rank(rank))
+fn parse_position(request: String) -> Result(#(Int, String), String) {
+  use #(col, request) <- result.try(request |> parse_file())
+  use #(row, request) <- result.try(request |> parse_rank())
   let col_index = col - 1
   let row_index = row - 1
-  Ok({ row_index * 8 + col_index } / 2)
+  #({ row_index * 8 + col_index } / 2, request) |> Ok
 }
 
-fn parse_file(file: String) -> Result(Int, String) {
-  case file {
-    "a" -> Ok(1)
-    "b" -> Ok(2)
-    "c" -> Ok(3)
-    "d" -> Ok(4)
-    "e" -> Ok(5)
-    "f" -> Ok(6)
-    "g" -> Ok(7)
-    "h" -> Ok(8)
+fn parse_file(request: String) -> Result(#(Int, String), String) {
+  case request {
+    "a" <> rest -> Ok(#(1, rest))
+    "b" <> rest -> Ok(#(2, rest))
+    "c" <> rest -> Ok(#(3, rest))
+    "d" <> rest -> Ok(#(4, rest))
+    "e" <> rest -> Ok(#(5, rest))
+    "f" <> rest -> Ok(#(6, rest))
+    "g" <> rest -> Ok(#(7, rest))
+    "h" <> rest -> Ok(#(8, rest))
     _ -> Error("Invalid file: must be a-h")
   }
 }
 
-fn parse_rank(rank: String) -> Result(Int, String) {
-  case rank {
-    "8" -> Ok(1)
-    "7" -> Ok(2)
-    "6" -> Ok(3)
-    "5" -> Ok(4)
-    "4" -> Ok(5)
-    "3" -> Ok(6)
-    "2" -> Ok(7)
-    "1" -> Ok(8)
+fn parse_rank(request: String) -> Result(#(Int, String), String) {
+  case request {
+    "8" <> rest -> Ok(#(1, rest))
+    "7" <> rest -> Ok(#(2, rest))
+    "6" <> rest -> Ok(#(3, rest))
+    "5" <> rest -> Ok(#(4, rest))
+    "4" <> rest -> Ok(#(5, rest))
+    "3" <> rest -> Ok(#(6, rest))
+    "2" <> rest -> Ok(#(7, rest))
+    "1" <> rest -> Ok(#(8, rest))
     _ -> Error("Invalid rank: must be 1-8")
   }
 }

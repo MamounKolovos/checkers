@@ -41,6 +41,8 @@ fn prompt(active_color: board.Color) -> String {
   board.color_to_string(active_color) <> "'s turn, Enter a move: "
 }
 
+//TODO: Mandatory capture
+//TODO: piece promotion
 pub fn main() -> Nil {
   case play() {
     Ok(_) -> Nil
