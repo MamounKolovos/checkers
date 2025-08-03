@@ -61,7 +61,10 @@ fn parse_square_number(
 ) -> Result(#(Int, Piece, String), String) {
   use #(piece, fen) <- result.try(parse_king(fen, color))
   use #(number, fen) <- result.try(parse_int(fen))
-  #(number, piece, fen) |> Ok
+  case number > 0 && number <= 32 {
+    True -> #(number, piece, fen) |> Ok
+    False -> Error("OutOfRange")
+  }
 }
 
 fn parse_color(fen: String) -> Result(#(Color, String), String) {
