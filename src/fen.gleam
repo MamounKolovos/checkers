@@ -100,10 +100,8 @@ fn do_parse_int(
   case parse_int_char(fen) {
     Ok(#(char, rest)) -> do_parse_int(rest, int_string <> char)
     Error(_) -> {
-      case int.parse(int_string) {
-        Ok(n) -> Ok(#(n, fen))
-        Error(Nil) -> Error("Expected an integer, got: " <> int_string)
-      }
+      let assert Ok(n) = int.parse(int_string)
+      #(n, fen) |> Ok
     }
   }
 }
