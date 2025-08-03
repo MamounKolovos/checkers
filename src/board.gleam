@@ -15,9 +15,7 @@ pub fn index_to_row_col(index: Int) -> #(Int, Int) {
 
   let col = case row % 2 {
     0 -> offset * 2 + 1
-    // even rows: B, D, F, H (odd col indices)
     1 -> offset * 2
-    // odd rows: A, C, E, G (even col indices)
     _ -> panic
   }
 
@@ -102,7 +100,6 @@ fn row_to_string(row: Int, board: Board) -> String {
       let i = row * 8 + col
       case { row + col } % 2 == 1 {
         True -> {
-          // int.to_string(i / 2)
           let square = iv.get_or_default(board, i / 2, or: Empty)
           square_to_str(square)
         }
