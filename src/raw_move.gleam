@@ -1,26 +1,26 @@
 import gleam/list
 import gleam/result
 
-pub opaque type ParsedMove {
-  ParsedMove(from: Int, middle: List(Int), to: Int)
+pub opaque type RawMove {
+  RawMove(from: Int, middle: List(Int), to: Int)
 }
 
-pub fn parts(parsed_move: ParsedMove) -> #(Int, List(Int), Int) {
-  #(parsed_move.from, parsed_move.middle, parsed_move.to)
+pub fn parts(raw_move: RawMove) -> #(Int, List(Int), Int) {
+  #(raw_move.from, raw_move.middle, raw_move.to)
 }
 
-pub fn parse(request: String) -> Result(ParsedMove, String) {
+pub fn parse(request: String) -> Result(RawMove, String) {
   parse_path(request)
 }
 
-fn parse_path(request: String) -> Result(ParsedMove, String) {
+fn parse_path(request: String) -> Result(RawMove, String) {
   parse_path_loop(request, [])
 }
 
 fn parse_path_loop(
   request: String,
   positions: List(Int),
-) -> Result(ParsedMove, String) {
+) -> Result(RawMove, String) {
   case request {
     // base case - we've finished iterating, and now all everything is within
     // the `positions` variable
@@ -36,7 +36,7 @@ fn parse_path_loop(
 
             // We use the new, reversed `middle` instead of `rest`, because since we
             // prepended to the list on creation, it was backwards before.
-            [from, ..middle] -> ParsedMove(from:, middle:, to:) |> Ok
+            [from, ..middle] -> RawMove(from:, middle:, to:) |> Ok
           }
       }
     }

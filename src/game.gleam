@@ -4,7 +4,7 @@ import gleam/bool
 import gleam/list
 import gleam/result
 import iv
-import parsed_move.{type ParsedMove}
+import raw_move.{type RawMove}
 
 pub opaque type Move {
   Simple(piece: board.Piece, from: Int, to: Int)
@@ -53,8 +53,8 @@ pub fn from_fen(fen: String) -> Result(Game, String) {
 }
 
 pub fn move(game: Game, request: String) -> Result(Game, String) {
-  use parsed_move <- result.try(parsed_move.parse(request))
-  use move <- result.try(from_parsed(game, parsed_move))
+  use raw_move <- result.try(raw_move.parse(request))
+  use move <- result.try(from_raw(game, raw_move))
 
   case move {
     Simple(piece:, from:, to:) -> {
@@ -91,8 +91,8 @@ pub fn move(game: Game, request: String) -> Result(Game, String) {
   }
 }
 
-pub fn from_parsed(game: Game, parsed: ParsedMove) -> Result(Move, String) {
-  let #(from, middle, to) = parsed_move.parts(parsed)
+pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, String) {
+  let #(from, middle, to) = raw_move.parts(raw_move)
   use piece <- result.try(
     iv.get_or_default(game.board, from, board.Empty)
     |> board.get_piece()
