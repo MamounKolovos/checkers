@@ -1,112 +1,146 @@
-import board.{type Color, type Piece, Black, King, Man, White}
+import board
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/string
+
+pub type Error {
+  SegmentMismatch
+  OutOfRange
+  UnexpectedChar(expected: String, got: String)
+}
 
 pub type ParseResult {
   ParseResult(
-    active_color: Color,
-    white_squares: List(#(Int, Piece)),
-    black_squares: List(#(Int, Piece)),
+    active_color: board.Color,
+    white_squares: List(#(Int, board.Piece)),
+    black_squares: List(#(Int, board.Piece)),
   )
 }
 
-//"B:W18,22,25,29,31:B1,5,9,12"
-pub fn parse(fen: String) -> Result(ParseResult, String) {
+// format of fen: "[Turn]:[Color 1][K][Square number][,]...]:[Color 2][K][Square number][,]...]"
+// example: "B:W18,22,25,29,31:B1,5,9,12"
+pub fn parse(fen: String) -> Result(ParseResult, Error) {
+  // consume the active color from the start of the fen
+  // "B:W18,..." -> active_color = Black
   use #(active_color, fen) <- result.try(parse_color(fen))
-  use #(squares1, color1, fen) <- result.try(parse_segment(fen))
-  use #(squares2, color2, _) <- result.try(parse_segment(fen))
 
+  use fen <- result.try(parse_colon(fen))
+  use #(color1, fen) <- result.try(parse_color(fen))
+  // consume the first color's squares, stopping only when seeing a colon
+  use #(squares1, fen) <- result.try(
+    parse_full_square_numbers_loop1(fen, color1, []),
+  )
+
+  use fen <- result.try(parse_colon(fen))
+  use #(color2, fen) <- result.try(parse_color(fen))
+  // consume the second color's squares, stopping only when seeing the end of the string
+  use #(squares2, _) <- result.try(
+    parse_full_square_numbers_loop2(fen, color2, []),
+  )
+
+  // ensure the first and second colors are unique from each other
   use #(white_squares, black_squares) <- result.try(case color1, color2 {
-    White, Black -> #(squares1, squares2) |> Ok
-    Black, White -> #(squares2, squares1) |> Ok
-    _, _ -> Error("Expected one white segment and one black segment")
+    board.White, board.Black -> #(squares1, squares2) |> Ok
+    board.Black, board.White -> #(squares2, squares1) |> Ok
+    _, _ -> Error(SegmentMismatch)
   })
 
   ParseResult(active_color:, white_squares:, black_squares:) |> Ok
 }
 
-fn parse_segment(
-  fen: String,
-) -> Result(#(List(#(Int, Piece)), Color, String), String) {
-  use fen <- result.try(parse_colon(fen))
-  use #(color, fen) <- result.try(parse_color(fen))
-  use #(squares, fen) <- result.try(parse_square_numbers(fen, color))
-  #(squares, color, fen) |> Ok
-}
-
-fn parse_square_numbers(
-  fen: String,
-  color: Color,
-) -> Result(#(List(#(Int, Piece)), String), String) {
-  parse_square_numbers_loop(fen, color, [])
-}
-
-fn parse_square_numbers_loop(
-  fen: String,
-  color: Color,
-  acc: List(#(Int, Piece)),
-) -> Result(#(List(#(Int, Piece)), String), String) {
-  use #(number, piece, fen) <- result.try(parse_square_number(fen, color))
-  let acc = list.prepend(acc, #(number, piece))
-  case fen {
-    "," <> rest -> parse_square_numbers_loop(rest, color, acc)
-    _ -> #(list.reverse(acc), fen) |> Ok
+fn parse_color(fen: String) -> Result(#(board.Color, String), Error) {
+  case string.pop_grapheme(fen) {
+    Ok(#("B", rest)) -> #(board.Black, rest) |> Ok
+    Ok(#("W", rest)) -> #(board.White, rest) |> Ok
+    Ok(#(first, _)) -> UnexpectedChar(expected: "B or W", got: first) |> Error
+    Error(_) -> UnexpectedChar(expected: "B or W", got: "") |> Error
   }
 }
 
-fn parse_square_number(
+fn parse_colon(fen: String) -> Result(String, Error) {
+  case string.pop_grapheme(fen) {
+    Ok(#(":", rest)) -> rest |> Ok
+    Ok(#(first, _)) -> UnexpectedChar(expected: ":", got: first) |> Error
+    Error(_) -> UnexpectedChar(expected: ":", got: "") |> Error
+  }
+}
+
+fn parse_full_square_numbers_loop1(
   fen: String,
-  color: Color,
-) -> Result(#(Int, Piece, String), String) {
-  use #(piece, fen) <- result.try(parse_king(fen, color))
-  use #(number, fen) <- result.try(parse_int(fen))
-  case number > 0 && number <= 32 {
-    True -> #(number, piece, fen) |> Ok
-    False -> Error("OutOfRange")
+  color: board.Color,
+  acc: List(#(Int, board.Piece)),
+) -> Result(#(List(#(Int, board.Piece)), String), Error) {
+  use #(n, piece, fen) <- result.try(parse_full_square_number(fen, color, False))
+
+  case string.pop_grapheme(fen) {
+    Ok(#(",", rest)) -> {
+      parse_full_square_numbers_loop1(rest, color, [#(n, piece), ..acc])
+    }
+    Ok(#(":", _)) -> #([#(n, piece), ..acc] |> list.reverse(), fen) |> Ok
+    Ok(#(first, _)) ->
+      UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
+    Error(_) -> UnexpectedChar(expected: "1-32 or , or EOS", got: "") |> Error
   }
 }
 
-fn parse_color(fen: String) -> Result(#(Color, String), String) {
-  case fen {
-    "B" <> rest -> #(Black, rest) |> Ok
-    "W" <> rest -> #(White, rest) |> Ok
-    _ -> Error("Expected 'B' or 'W'")
-  }
-}
-
-fn parse_colon(fen: String) -> Result(String, String) {
-  case fen {
-    ":" <> rest -> Ok(rest)
-    _ -> Error("Expected a colon")
-  }
-}
-
-fn parse_king(fen: String, color: Color) -> Result(#(Piece, String), String) {
-  case fen {
-    "K" <> rest -> #(King(color), rest) |> Ok
-    _ -> #(Man(color), fen) |> Ok
-  }
-}
-
-fn parse_int(fen: String) -> Result(#(Int, String), String) {
-  do_parse_int(fen, "")
-}
-
-fn do_parse_int(
+fn parse_full_square_numbers_loop2(
   fen: String,
-  int_string: String,
-) -> Result(#(Int, String), String) {
-  case parse_int_char(fen) {
-    Ok(#(char, rest)) -> do_parse_int(rest, int_string <> char)
+  color: board.Color,
+  acc: List(#(Int, board.Piece)),
+) -> Result(#(List(#(Int, board.Piece)), String), Error) {
+  use #(n, piece, fen) <- result.try(parse_full_square_number(fen, color, False))
+
+  case string.pop_grapheme(fen) {
+    Ok(#(",", rest)) -> {
+      parse_full_square_numbers_loop2(rest, color, [#(n, piece), ..acc])
+    }
+    Ok(#(first, _)) ->
+      UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
+    Error(_) -> #([#(n, piece), ..acc] |> list.reverse(), fen) |> Ok
+  }
+}
+
+fn parse_full_square_number(
+  fen: String,
+  color: board.Color,
+  k_parsed: Bool,
+) -> Result(#(Int, board.Piece, String), Error) {
+  case string.pop_grapheme(fen) {
+    Ok(#(first, rest)) ->
+      case first {
+        "K" -> parse_full_square_number(rest, color, True)
+
+        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> {
+          let #(n, rest) = parse_square_number_loop(rest, first)
+          case n > 0 && n <= 32 {
+            True ->
+              case k_parsed {
+                True -> #(n, board.King(color), rest) |> Ok
+                False -> #(n, board.Man(color), rest) |> Ok
+              }
+            False -> OutOfRange |> Error
+          }
+        }
+
+        first -> UnexpectedChar("K or 1-32", got: first) |> Error
+      }
+
+    Error(_) -> UnexpectedChar("K or 1-32", got: "") |> Error
+  }
+}
+
+fn parse_square_number_loop(fen: String, int_string: String) -> #(Int, String) {
+  case parse_square_number_char(fen) {
+    Ok(#(char, rest)) -> parse_square_number_loop(rest, int_string <> char)
     Error(_) -> {
       let assert Ok(n) = int.parse(int_string)
-      #(n, fen) |> Ok
+      #(n, fen)
     }
   }
 }
 
-fn parse_int_char(fen: String) -> Result(#(String, String), String) {
+fn parse_square_number_char(fen: String) -> Result(#(String, String), Nil) {
   case fen {
     "0" <> rest -> Ok(#("0", rest))
     "1" <> rest -> Ok(#("1", rest))
@@ -118,6 +152,6 @@ fn parse_int_char(fen: String) -> Result(#(String, String), String) {
     "7" <> rest -> Ok(#("7", rest))
     "8" <> rest -> Ok(#("8", rest))
     "9" <> rest -> Ok(#("9", rest))
-    _ -> Error("Expected a digit, got: " <> fen)
+    _ -> Error(Nil)
   }
 }

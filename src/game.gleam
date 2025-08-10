@@ -6,6 +6,14 @@ import gleam/result
 import iv
 import raw_move.{type RawMove}
 
+pub type Error {
+  NoPieceAtStart
+  InvalidSimpleMove
+  InvalidCaptureMove
+  FenError(fen.Error)
+  RawMoveError(raw_move.Error)
+}
+
 pub opaque type Move {
   Simple(piece: board.Piece, from: Int, to: Int)
   Capture(piece: board.Piece, from: Int, to: Int, captured: List(Int))
@@ -29,7 +37,7 @@ pub fn create() -> Game {
   game
 }
 
-pub fn from_fen(fen: String) -> Result(Game, String) {
+pub fn from_fen(fen: String) -> Result(Game, Error) {
   case fen.parse(fen) {
     Ok(fen.ParseResult(active_color, white_squares, black_squares)) -> {
       let board =
@@ -48,12 +56,14 @@ pub fn from_fen(fen: String) -> Result(Game, String) {
       )
       |> Ok
     }
-    Error(e) -> Error(e)
+    Error(e) -> Error(FenError(e))
   }
 }
 
-pub fn move(game: Game, request: String) -> Result(Game, String) {
-  use raw_move <- result.try(raw_move.parse(request))
+pub fn move(game: Game, request: String) -> Result(Game, Error) {
+  use raw_move <- result.try(
+    raw_move.parse(request) |> result.map_error(RawMoveError),
+  )
   use move <- result.try(from_raw(game, raw_move))
 
   case move {
@@ -91,12 +101,12 @@ pub fn move(game: Game, request: String) -> Result(Game, String) {
   }
 }
 
-pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, String) {
+pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
   let #(from, middle, to) = raw_move.parts(raw_move)
   use piece <- result.try(
     iv.get_or_default(game.board, from, board.Empty)
     |> board.get_piece()
-    |> result.replace_error("No piece at starting position"),
+    |> result.replace_error(NoPieceAtStart),
   )
 
   case generate_capture_builders(game, from, piece) {
@@ -106,7 +116,7 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, String) {
       |> list.find(fn(builder) {
         builder.from == from && middle == [] && builder.to == to
       })
-      |> result.replace_error("Invalid simple move")
+      |> result.replace_error(InvalidSimpleMove)
       |> result.map(build_simple_move)
     }
     capture_builders -> {
@@ -114,7 +124,7 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, String) {
       |> list.find(fn(builder) {
         builder.from == from && builder.middle == middle && builder.to == to
       })
-      |> result.replace_error("Invalid capture move")
+      |> result.replace_error(InvalidCaptureMove)
       |> result.map(build_capture_move)
     }
   }

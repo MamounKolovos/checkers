@@ -1,21 +1,23 @@
 import board
+import error
 import game.{type Game}
 import gleam/io
 import gleam/result
 import input.{input}
 
-pub fn play() -> Result(Nil, String) {
+pub fn play() -> Nil {
   let game = game.create()
   board.print(game.board)
-  loop(game)
+  let _ = loop(game)
+  Nil
 }
 
-fn loop(game: Game) -> Result(Nil, String) {
+fn loop(game: Game) -> Result(Nil, error.Error) {
   use request <- result.try(
     game.active_color
     |> prompt()
     |> input()
-    |> result.replace_error("Error reading stdin"),
+    |> result.replace_error(error.FailedToReadStdin),
   )
   case request {
     "quit" | "q" | "exit" -> Ok(Nil)
@@ -30,7 +32,7 @@ fn loop(game: Game) -> Result(Nil, String) {
           loop(game)
         }
         Error(e) -> {
-          io.println(e)
+          error.GameError(e) |> error.to_string() |> io.println_error()
           loop(game)
         }
       }
@@ -44,9 +46,5 @@ fn prompt(active_color: board.Color) -> String {
 //TODO: Mandatory capture
 //TODO: piece promotion
 pub fn main() -> Nil {
-  case play() {
-    Ok(_) -> Nil
-    Error(e) -> io.println(e)
-  }
-  Nil
+  play()
 }
