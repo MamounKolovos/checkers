@@ -28,16 +28,12 @@ pub fn parse(fen: String) -> Result(ParseResult, Error) {
   use fen <- result.try(parse_colon(fen))
   use #(color1, fen) <- result.try(parse_color(fen))
   // consume the first color's squares, stopping only when seeing a colon
-  use #(squares1, fen) <- result.try(
-    parse_full_square_numbers_loop1(fen, color1, []),
-  )
+  use #(squares1, fen) <- result.try(parse_pieces_until_colon(fen, color1, []))
 
   use fen <- result.try(parse_colon(fen))
   use #(color2, fen) <- result.try(parse_color(fen))
   // consume the second color's squares, stopping only when seeing the end of the string
-  use #(squares2, _) <- result.try(
-    parse_full_square_numbers_loop2(fen, color2, []),
-  )
+  use #(squares2, _) <- result.try(parse_pieces_until_eos(fen, color2, []))
 
   // ensure the first and second colors are unique from each other
   use #(white_squares, black_squares) <- result.try(case color1, color2 {
@@ -66,16 +62,16 @@ fn parse_colon(fen: String) -> Result(String, Error) {
   }
 }
 
-fn parse_full_square_numbers_loop1(
+fn parse_pieces_until_colon(
   fen: String,
   color: board.Color,
   acc: List(#(Int, board.Piece)),
 ) -> Result(#(List(#(Int, board.Piece)), String), Error) {
-  use #(n, piece, fen) <- result.try(parse_full_square_number(fen, color, False))
+  use #(n, piece, fen) <- result.try(parse_full_piece(fen, color, False))
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
-      parse_full_square_numbers_loop1(rest, color, [#(n, piece), ..acc])
+      parse_pieces_until_colon(rest, color, [#(n, piece), ..acc])
     }
     Ok(#(":", _)) -> #([#(n, piece), ..acc] |> list.reverse(), fen) |> Ok
     Ok(#(first, _)) ->
@@ -84,16 +80,16 @@ fn parse_full_square_numbers_loop1(
   }
 }
 
-fn parse_full_square_numbers_loop2(
+fn parse_pieces_until_eos(
   fen: String,
   color: board.Color,
   acc: List(#(Int, board.Piece)),
 ) -> Result(#(List(#(Int, board.Piece)), String), Error) {
-  use #(n, piece, fen) <- result.try(parse_full_square_number(fen, color, False))
+  use #(n, piece, fen) <- result.try(parse_full_piece(fen, color, False))
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
-      parse_full_square_numbers_loop2(rest, color, [#(n, piece), ..acc])
+      parse_pieces_until_eos(rest, color, [#(n, piece), ..acc])
     }
     Ok(#(first, _)) ->
       UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
@@ -101,7 +97,7 @@ fn parse_full_square_numbers_loop2(
   }
 }
 
-fn parse_full_square_number(
+fn parse_full_piece(
   fen: String,
   color: board.Color,
   k_parsed: Bool,
@@ -109,10 +105,10 @@ fn parse_full_square_number(
   case string.pop_grapheme(fen) {
     Ok(#(first, rest)) ->
       case first {
-        "K" -> parse_full_square_number(rest, color, True)
+        "K" -> parse_full_piece(rest, color, True)
 
         "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> {
-          let #(n, rest) = parse_square_number_loop(rest, first)
+          let #(n, rest) = parse_piece_loop(rest, first)
           case n > 0 && n <= 32 {
             True ->
               case k_parsed {
@@ -130,9 +126,9 @@ fn parse_full_square_number(
   }
 }
 
-fn parse_square_number_loop(fen: String, int_string: String) -> #(Int, String) {
-  case parse_square_number_char(fen) {
-    Ok(#(char, rest)) -> parse_square_number_loop(rest, int_string <> char)
+fn parse_piece_loop(fen: String, int_string: String) -> #(Int, String) {
+  case parse_piece_char(fen) {
+    Ok(#(char, rest)) -> parse_piece_loop(rest, int_string <> char)
     Error(_) -> {
       let assert Ok(n) = int.parse(int_string)
       #(n, fen)
@@ -140,7 +136,7 @@ fn parse_square_number_loop(fen: String, int_string: String) -> #(Int, String) {
   }
 }
 
-fn parse_square_number_char(fen: String) -> Result(#(String, String), Nil) {
+fn parse_piece_char(fen: String) -> Result(#(String, String), Nil) {
   case fen {
     "0" <> rest -> Ok(#("0", rest))
     "1" <> rest -> Ok(#("1", rest))
