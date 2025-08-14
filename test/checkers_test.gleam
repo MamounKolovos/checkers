@@ -2,6 +2,7 @@ import board.{Black}
 import fen
 import game
 import gleeunit
+import iv
 import raw_move
 
 pub fn main() -> Nil {
@@ -95,4 +96,16 @@ pub fn must_capture_if_available_1_test() {
 pub fn must_complete_capture_path_test() {
   let assert Ok(game) = game.from_fen("B:W18,27,28:B14")
   let assert Error(game.InvalidCaptureMove) = game.move(game, "c5e3")
+}
+
+pub fn piece_promotion_test() {
+  let assert Ok(game) = game.from_fen("B:B26:W11")
+  let assert Ok(game) = game.move(game, "d2c1")
+  let assert Ok(board.King(board.Black)) =
+    iv.get_or_default(game.board, 29, board.Empty) |> board.get_piece()
+
+  let assert Ok(game) = game.from_fen("W:B26:W6")
+  let assert Ok(game) = game.move(game, "c7d8")
+  let assert Ok(board.King(board.White)) =
+    iv.get_or_default(game.board, 1, board.Empty) |> board.get_piece()
 }

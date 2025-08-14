@@ -109,33 +109,41 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
     |> result.replace_error(NoPieceAtStart),
   )
 
-  case generate_capture_builders(game, from, piece) {
+  case generate_capture_builders(game, from, piece), middle {
     // In American Checkers, simple moves can only be taken if no captures are possible
-    [] -> {
-      generate_simple_builders(game, from, piece)
-      |> list.find(fn(builder) {
-        builder.from == from && middle == [] && builder.to == to
-      })
-      |> result.replace_error(InvalidSimpleMove)
-      |> result.map(build_simple_move)
+    [], [] -> {
+      use SimpleBuilder(piece:, from:, to:) <- result.map(
+        generate_simple_builders(game, from, piece)
+        |> list.find(fn(builder) { builder.from == from && builder.to == to })
+        |> result.replace_error(InvalidSimpleMove),
+      )
+      let #(row, _) = board.index_to_row_col(to)
+      case piece, row {
+        board.Man(Black as color), 7 | board.Man(White as color), 0 ->
+          Simple(piece: board.King(color), from:, to:)
+        piece, _ -> Simple(piece:, from:, to:)
+      }
     }
-    capture_builders -> {
-      capture_builders
-      |> list.find(fn(builder) {
-        builder.from == from && builder.middle == middle && builder.to == to
-      })
-      |> result.replace_error(InvalidCaptureMove)
-      |> result.map(build_capture_move)
+    capture_builders, middle -> {
+      use CaptureBuilder(piece:, from:, middle: _, to:, captured:) <- result.map(
+        capture_builders
+        |> list.find(fn(builder) {
+          builder.from == from && builder.middle == middle && builder.to == to
+        })
+        |> result.replace_error(InvalidCaptureMove),
+      )
+      let #(row, _) = board.index_to_row_col(to)
+      case piece, row {
+        board.Man(Black as color), 7 | board.Man(White as color), 0 ->
+          Capture(piece: board.King(color), from:, to:, captured:)
+        piece, _ -> Capture(piece:, from:, to:, captured:)
+      }
     }
   }
 }
 
 type SimpleBuilder {
   SimpleBuilder(piece: board.Piece, from: Int, to: Int)
-}
-
-fn build_simple_move(builder: SimpleBuilder) -> Move {
-  Simple(builder.piece, builder.from, builder.to)
 }
 
 fn generate_simple_builders(
@@ -170,10 +178,6 @@ type CaptureBuilder {
     to: Int,
     captured: List(Int),
   )
-}
-
-fn build_capture_move(builder: CaptureBuilder) -> Move {
-  Capture(builder.piece, builder.from, builder.to, builder.captured)
 }
 
 type CaptureSearch {
