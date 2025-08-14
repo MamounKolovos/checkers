@@ -109,3 +109,14 @@ pub fn piece_promotion_test() {
   let assert Ok(board.King(board.White)) =
     iv.get_or_default(game.board, 1, board.Empty) |> board.get_piece()
 }
+
+pub fn no_duplicate_positions_in_fen_test() {
+  let assert Error(game.FenError(fen.DuplicateFound)) =
+    game.from_fen("W:B18:W18")
+  let assert Error(game.FenError(fen.DuplicateFound)) =
+    game.from_fen("W:B18,18:W1")
+  let assert Error(game.FenError(fen.DuplicateFound)) =
+    game.from_fen("W:B1:W18,18")
+  let assert Error(game.FenError(fen.DuplicateFound)) =
+    game.from_fen("W:B1,2,3,4,5:W6,7,8,9,1")
+}

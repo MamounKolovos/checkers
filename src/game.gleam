@@ -1,6 +1,7 @@
 import board.{type Board, type Color, Black, White}
 import fen
 import gleam/bool
+import gleam/dict
 import gleam/list
 import gleam/result
 import iv
@@ -39,21 +40,17 @@ pub fn create() -> Game {
 
 pub fn from_fen(fen: String) -> Result(Game, Error) {
   case fen.parse(fen) {
-    Ok(fen.ParseResult(active_color, white_squares, black_squares)) -> {
+    Ok(fen.ParseResult(active_color:, squares:, white_count:, black_count:)) -> {
       let board =
-        list.append(white_squares, black_squares)
-        |> list.fold(from: iv.repeat(board.Empty, 32), with: fn(board, pair) {
-          let #(number, piece) = pair
-          iv.try_set(board, at: number - 1, to: board.Occupied(piece))
-        })
+        squares
+        |> dict.fold(
+          from: iv.repeat(board.Empty, 32),
+          with: fn(board, n, piece) {
+            iv.try_set(board, at: n - 1, to: board.Occupied(piece))
+          },
+        )
 
-      Game(
-        board:,
-        active_color:,
-        white_count: list.length(white_squares),
-        black_count: list.length(black_squares),
-        is_over: False,
-      )
+      Game(board:, active_color:, white_count:, black_count:, is_over: False)
       |> Ok
     }
     Error(e) -> Error(FenError(e))

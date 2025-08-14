@@ -1,20 +1,23 @@
 import board
+import gleam/bool
+import gleam/dict.{type Dict}
 import gleam/int
-import gleam/list
 import gleam/result
 import gleam/string
 
 pub type Error {
   SegmentMismatch
   OutOfRange
+  DuplicateFound
   UnexpectedChar(expected: String, got: String)
 }
 
 pub type ParseResult {
   ParseResult(
     active_color: board.Color,
-    white_squares: List(#(Int, board.Piece)),
-    black_squares: List(#(Int, board.Piece)),
+    squares: Dict(Int, board.Piece),
+    white_count: Int,
+    black_count: Int,
   )
 }
 
@@ -28,21 +31,27 @@ pub fn parse(fen: String) -> Result(ParseResult, Error) {
   use fen <- result.try(parse_colon(fen))
   use #(color1, fen) <- result.try(parse_color(fen))
   // consume the first color's squares, stopping only when seeing a colon
-  use #(squares1, fen) <- result.try(parse_pieces_until_colon(fen, color1, []))
+  use #(squares, squares1_count, fen) <- result.try(parse_pieces_until_colon(
+    fen,
+    color1,
+  ))
 
   use fen <- result.try(parse_colon(fen))
   use #(color2, fen) <- result.try(parse_color(fen))
   // consume the second color's squares, stopping only when seeing the end of the string
-  use #(squares2, _) <- result.try(parse_pieces_until_eos(fen, color2, []))
+  use #(squares, squares2_count, _) <- result.try(parse_pieces_until_eos(
+    fen,
+    color2,
+    squares,
+  ))
 
   // ensure the first and second colors are unique from each other
-  use #(white_squares, black_squares) <- result.try(case color1, color2 {
-    board.White, board.Black -> #(squares1, squares2) |> Ok
-    board.Black, board.White -> #(squares2, squares1) |> Ok
+  use #(white_count, black_count) <- result.try(case color1, color2 {
+    board.White, board.Black -> #(squares1_count, squares2_count) |> Ok
+    board.Black, board.White -> #(squares2_count, squares1_count) |> Ok
     _, _ -> Error(SegmentMismatch)
   })
-
-  ParseResult(active_color:, white_squares:, black_squares:) |> Ok
+  ParseResult(active_color:, squares:, white_count:, black_count:) |> Ok
 }
 
 fn parse_color(fen: String) -> Result(#(board.Color, String), Error) {
@@ -65,15 +74,30 @@ fn parse_colon(fen: String) -> Result(String, Error) {
 fn parse_pieces_until_colon(
   fen: String,
   color: board.Color,
-  acc: List(#(Int, board.Piece)),
-) -> Result(#(List(#(Int, board.Piece)), String), Error) {
+) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
+  parse_pieces_until_colon_loop(fen, color, dict.new(), 0)
+}
+
+fn parse_pieces_until_colon_loop(
+  fen: String,
+  color: board.Color,
+  acc: Dict(Int, board.Piece),
+  count: Int,
+) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
   use #(n, piece, fen) <- result.try(parse_full_piece(fen, color, False))
+  use <- bool.guard(dict.has_key(acc, n), return: Error(DuplicateFound))
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
-      parse_pieces_until_colon(rest, color, [#(n, piece), ..acc])
+      parse_pieces_until_colon_loop(
+        rest,
+        color,
+        dict.insert(acc, for: n, insert: piece),
+        count + 1,
+      )
     }
-    Ok(#(":", _)) -> #([#(n, piece), ..acc] |> list.reverse(), fen) |> Ok
+    Ok(#(":", _)) ->
+      #(dict.insert(acc, for: n, insert: piece), count + 1, fen) |> Ok
     Ok(#(first, _)) ->
       UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
     Error(_) -> UnexpectedChar(expected: "1-32 or , or EOS", got: "") |> Error
@@ -83,17 +107,32 @@ fn parse_pieces_until_colon(
 fn parse_pieces_until_eos(
   fen: String,
   color: board.Color,
-  acc: List(#(Int, board.Piece)),
-) -> Result(#(List(#(Int, board.Piece)), String), Error) {
+  acc: Dict(Int, board.Piece),
+) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
+  parse_pieces_until_eos_loop(fen, color, acc, 0)
+}
+
+fn parse_pieces_until_eos_loop(
+  fen: String,
+  color: board.Color,
+  acc: Dict(Int, board.Piece),
+  count count: Int,
+) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
   use #(n, piece, fen) <- result.try(parse_full_piece(fen, color, False))
+  use <- bool.guard(dict.has_key(acc, n), return: Error(DuplicateFound))
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
-      parse_pieces_until_eos(rest, color, [#(n, piece), ..acc])
+      parse_pieces_until_eos_loop(
+        rest,
+        color,
+        dict.insert(acc, for: n, insert: piece),
+        count + 1,
+      )
     }
     Ok(#(first, _)) ->
       UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
-    Error(_) -> #([#(n, piece), ..acc] |> list.reverse(), fen) |> Ok
+    Error(_) -> #(dict.insert(acc, for: n, insert: piece), count + 1, fen) |> Ok
   }
 }
 

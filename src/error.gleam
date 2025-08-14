@@ -30,6 +30,7 @@ fn fen_error_to_string(error: fen.Error) -> String {
   case error {
     fen.SegmentMismatch -> "Expected one white segment and one black segment"
     fen.OutOfRange -> "Square number out of range"
+    fen.DuplicateFound -> "Duplicate found in fen string"
     fen.UnexpectedChar(expected:, got:) ->
       "Expected " <> expected <> ", " <> got
   }
