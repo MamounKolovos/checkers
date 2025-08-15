@@ -15,7 +15,7 @@ pub type Error {
 pub type ParseResult {
   ParseResult(
     active_color: board.Color,
-    squares: Dict(Int, board.Piece),
+    squares: Dict(board.BoardIndex, board.Piece),
     white_count: Int,
     black_count: Int,
   )
@@ -74,30 +74,30 @@ fn parse_colon(fen: String) -> Result(String, Error) {
 fn parse_pieces_until_colon(
   fen: String,
   color: board.Color,
-) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
+) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
   parse_pieces_until_colon_loop(fen, color, dict.new(), 0)
 }
 
 fn parse_pieces_until_colon_loop(
   fen: String,
   color: board.Color,
-  acc: Dict(Int, board.Piece),
+  acc: Dict(board.BoardIndex, board.Piece),
   count: Int,
-) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
-  use #(n, piece, fen) <- result.try(parse_full_piece(fen, color, False))
-  use <- bool.guard(dict.has_key(acc, n), return: Error(DuplicateFound))
+) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
+  use #(index, piece, fen) <- result.try(parse_full_piece(fen, color, False))
+  use <- bool.guard(dict.has_key(acc, index), return: Error(DuplicateFound))
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
       parse_pieces_until_colon_loop(
         rest,
         color,
-        dict.insert(acc, for: n, insert: piece),
+        dict.insert(acc, for: index, insert: piece),
         count + 1,
       )
     }
     Ok(#(":", _)) ->
-      #(dict.insert(acc, for: n, insert: piece), count + 1, fen) |> Ok
+      #(dict.insert(acc, for: index, insert: piece), count + 1, fen) |> Ok
     Ok(#(first, _)) ->
       UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
     Error(_) -> UnexpectedChar(expected: "1-32 or , or EOS", got: "") |> Error
@@ -107,32 +107,33 @@ fn parse_pieces_until_colon_loop(
 fn parse_pieces_until_eos(
   fen: String,
   color: board.Color,
-  acc: Dict(Int, board.Piece),
-) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
+  acc: Dict(board.BoardIndex, board.Piece),
+) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
   parse_pieces_until_eos_loop(fen, color, acc, 0)
 }
 
 fn parse_pieces_until_eos_loop(
   fen: String,
   color: board.Color,
-  acc: Dict(Int, board.Piece),
-  count count: Int,
-) -> Result(#(Dict(Int, board.Piece), Int, String), Error) {
-  use #(n, piece, fen) <- result.try(parse_full_piece(fen, color, False))
-  use <- bool.guard(dict.has_key(acc, n), return: Error(DuplicateFound))
+  acc: Dict(board.BoardIndex, board.Piece),
+  count: Int,
+) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
+  use #(index, piece, fen) <- result.try(parse_full_piece(fen, color, False))
+  use <- bool.guard(dict.has_key(acc, index), return: Error(DuplicateFound))
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
       parse_pieces_until_eos_loop(
         rest,
         color,
-        dict.insert(acc, for: n, insert: piece),
+        dict.insert(acc, for: index, insert: piece),
         count + 1,
       )
     }
     Ok(#(first, _)) ->
       UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
-    Error(_) -> #(dict.insert(acc, for: n, insert: piece), count + 1, fen) |> Ok
+    Error(_) ->
+      #(dict.insert(acc, for: index, insert: piece), count + 1, fen) |> Ok
   }
 }
 
@@ -140,7 +141,7 @@ fn parse_full_piece(
   fen: String,
   color: board.Color,
   k_parsed: Bool,
-) -> Result(#(Int, board.Piece, String), Error) {
+) -> Result(#(board.BoardIndex, board.Piece, String), Error) {
   case string.pop_grapheme(fen) {
     Ok(#(first, rest)) ->
       case first {
@@ -148,13 +149,13 @@ fn parse_full_piece(
 
         "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> {
           let #(n, rest) = parse_piece_loop(rest, first)
-          case n > 0 && n <= 32 {
-            True ->
+          case board.from_int(n - 1) {
+            Ok(index) ->
               case k_parsed {
-                True -> #(n, board.King(color), rest) |> Ok
-                False -> #(n, board.Man(color), rest) |> Ok
+                True -> #(index, board.King(color), rest) |> Ok
+                False -> #(index, board.Man(color), rest) |> Ok
               }
-            False -> OutOfRange |> Error
+            Error(_) -> OutOfRange |> Error
           }
         }
 

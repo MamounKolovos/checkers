@@ -4,7 +4,6 @@ import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/result
-import iv
 import raw_move.{type RawMove}
 
 pub type Error {
@@ -16,8 +15,13 @@ pub type Error {
 }
 
 pub opaque type Move {
-  Simple(piece: board.Piece, from: Int, to: Int)
-  Capture(piece: board.Piece, from: Int, to: Int, captured: List(Int))
+  Simple(piece: board.Piece, from: board.BoardIndex, to: board.BoardIndex)
+  Capture(
+    piece: board.Piece,
+    from: board.BoardIndex,
+    to: board.BoardIndex,
+    captured: List(board.BoardIndex),
+  )
 }
 
 pub type Game {
@@ -43,12 +47,9 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
     Ok(fen.ParseResult(active_color:, squares:, white_count:, black_count:)) -> {
       let board =
         squares
-        |> dict.fold(
-          from: iv.repeat(board.Empty, 32),
-          with: fn(board, n, piece) {
-            iv.try_set(board, at: n - 1, to: board.Occupied(piece))
-          },
-        )
+        |> dict.fold(from: board.empty(), with: fn(board, index, piece) {
+          board.set(board, at: index, to: board.Occupied(piece))
+        })
 
       Game(board:, active_color:, white_count:, black_count:, is_over: False)
       |> Ok
@@ -67,18 +68,18 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     Simple(piece:, from:, to:) -> {
       let board =
         game.board
-        |> iv.try_set(at: from, to: board.Empty)
-        |> iv.try_set(at: to, to: board.Occupied(piece))
+        |> board.set(at: from, to: board.Empty)
+        |> board.set(at: to, to: board.Occupied(piece))
       let active_color = board.switch_color(game.active_color)
       Game(..game, board:, active_color:) |> Ok
     }
     Capture(piece:, from:, to:, captured:) -> {
       let board =
         game.board
-        |> iv.try_set(at: from, to: board.Empty)
-        |> iv.try_set(at: to, to: board.Occupied(piece))
+        |> board.set(at: from, to: board.Empty)
+        |> board.set(at: to, to: board.Occupied(piece))
         |> list.fold(captured, from: _, with: fn(acc, square_index) {
-          iv.try_set(acc, at: square_index, to: board.Empty)
+          board.set(acc, at: square_index, to: board.Empty)
         })
 
       let captured_count = list.length(captured)
@@ -101,7 +102,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
 pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
   let #(from, middle, to) = raw_move.parts(raw_move)
   use piece <- result.try(
-    iv.get_or_default(game.board, from, board.Empty)
+    board.get(game.board, at: from)
     |> board.get_piece()
     |> result.replace_error(NoPieceAtStart),
   )
@@ -140,12 +141,16 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
 }
 
 type SimpleBuilder {
-  SimpleBuilder(piece: board.Piece, from: Int, to: Int)
+  SimpleBuilder(
+    piece: board.Piece,
+    from: board.BoardIndex,
+    to: board.BoardIndex,
+  )
 }
 
 fn generate_simple_builders(
   game: Game,
-  from: Int,
+  from: board.BoardIndex,
   piece: board.Piece,
 ) -> List(SimpleBuilder) {
   let #(from_row, from_col) = board.index_to_row_col(from)
@@ -159,9 +164,9 @@ fn generate_simple_builders(
   }
   |> list.filter_map(fn(offset) {
     let #(row, col) = offset
-    let to = board.row_col_to_index(from_row + row, from_col + col)
-    case iv.get(game.board, to) {
-      Ok(board.Empty) -> SimpleBuilder(piece:, from:, to:) |> Ok
+    use to <- result.try(board.row_col_to_index(from_row + row, from_col + col))
+    case board.get(game.board, to) {
+      board.Empty -> SimpleBuilder(piece:, from:, to:) |> Ok
       _ -> Error(Nil)
     }
   })
@@ -170,17 +175,17 @@ fn generate_simple_builders(
 type CaptureBuilder {
   CaptureBuilder(
     piece: board.Piece,
-    from: Int,
-    middle: List(Int),
-    to: Int,
-    captured: List(Int),
+    from: board.BoardIndex,
+    middle: List(board.BoardIndex),
+    to: board.BoardIndex,
+    captured: List(board.BoardIndex),
   )
 }
 
 type CaptureSearch {
   CaptureSearch(
     game: Game,
-    from: Int,
+    from: board.BoardIndex,
     piece: board.Piece,
     builder: CaptureBuilder,
     acc: List(CaptureBuilder),
@@ -189,15 +194,22 @@ type CaptureSearch {
 
 fn generate_capture_builders(
   game: Game,
-  from: Int,
+  from: board.BoardIndex,
   piece: board.Piece,
 ) -> List(CaptureBuilder) {
+  let assert Ok(dummy) = board.from_int(0)
   generate_capture_builders_loop(
     CaptureSearch(
       game:,
       from:,
       piece:,
-      builder: CaptureBuilder(piece:, from:, middle: [], to: -1, captured: []),
+      builder: CaptureBuilder(
+        piece:,
+        from:,
+        middle: [],
+        to: dummy,
+        captured: [],
+      ),
       acc: [],
     ),
   )
@@ -220,6 +232,7 @@ fn generate_capture_builders_loop(
 
       let new_row = from_row + offset_row
       let new_col = from_col + offset_col
+      use to <- result.try(board.row_col_to_index(new_row, new_col))
 
       use <- bool.guard(
         new_row < 0 || new_row > 7 || new_col < 0 || new_col > 7,
@@ -228,11 +241,14 @@ fn generate_capture_builders_loop(
 
       let capture_row = from_row + { offset_row / 2 }
       let capture_col = from_col + { offset_col / 2 }
-      let capture_index = board.row_col_to_index(capture_row, capture_col)
+      use capture_index <- result.try(board.row_col_to_index(
+        capture_row,
+        capture_col,
+      ))
 
-      case iv.get(game.board, at: capture_index) {
-        Ok(board.Occupied(capture_piece)) if capture_piece.color != piece.color ->
-          #(board.row_col_to_index(new_row, new_col), capture_index) |> Ok
+      case board.get(game.board, at: capture_index) {
+        board.Occupied(capture_piece) if capture_piece.color != piece.color ->
+          #(to, capture_index) |> Ok
         _ -> Error(Nil)
       }
     })

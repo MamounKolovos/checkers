@@ -1,3 +1,4 @@
+import board
 import gleam/list
 import gleam/result
 
@@ -9,10 +10,16 @@ pub type Error {
 }
 
 pub opaque type RawMove {
-  RawMove(from: Int, middle: List(Int), to: Int)
+  RawMove(
+    from: board.BoardIndex,
+    middle: List(board.BoardIndex),
+    to: board.BoardIndex,
+  )
 }
 
-pub fn parts(raw_move: RawMove) -> #(Int, List(Int), Int) {
+pub fn parts(
+  raw_move: RawMove,
+) -> #(board.BoardIndex, List(board.BoardIndex), board.BoardIndex) {
   #(raw_move.from, raw_move.middle, raw_move.to)
 }
 
@@ -26,7 +33,7 @@ fn parse_path(request: String) -> Result(RawMove, Error) {
 
 fn parse_path_loop(
   request: String,
-  positions: List(Int),
+  positions: List(board.BoardIndex),
 ) -> Result(RawMove, Error) {
   case request {
     // base case - we've finished iterating, and now all everything is within
@@ -57,12 +64,13 @@ fn parse_path_loop(
   }
 }
 
-fn parse_position(request: String) -> Result(#(Int, String), Error) {
+fn parse_position(request: String) -> Result(#(board.BoardIndex, String), Error) {
   use #(col, request) <- result.try(request |> parse_file())
   use #(row, request) <- result.try(request |> parse_rank())
   let col_index = col - 1
   let row_index = row - 1
-  #({ row_index * 8 + col_index } / 2, request) |> Ok
+  let assert Ok(index) = board.row_col_to_index(row_index, col_index)
+  #(index, request) |> Ok
 }
 
 fn parse_file(request: String) -> Result(#(Int, String), Error) {

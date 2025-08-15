@@ -1,8 +1,8 @@
-import board.{Black}
+import board
 import fen
 import game
+import gleam/result
 import gleeunit
-import iv
 import raw_move
 
 pub fn main() -> Nil {
@@ -33,10 +33,16 @@ pub fn fen_parsing_test() {
 
 pub fn raw_move_parsing_test() {
   let assert Ok(raw_move) = raw_move.parse("a3b4")
-  assert raw_move.parts(raw_move) == #(20, [], 16)
+  let assert Ok(from) = board.from_int(20)
+  let assert Ok(to) = board.from_int(16)
+  assert raw_move.parts(raw_move) == #(from, [], to)
 
+  let assert Ok(from) = board.from_int(1)
+  let assert Ok(middle) =
+    [board.from_int(8), board.from_int(17)] |> result.all()
+  let assert Ok(to) = board.from_int(26)
   let assert Ok(raw_move) = raw_move.parse("d8b6d4f2")
-  assert raw_move.parts(raw_move) == #(1, [8, 17], 26)
+  assert raw_move.parts(raw_move) == #(from, middle, to)
 
   let assert Error(raw_move.InvalidFile) = raw_move.parse("$3b4")
   let assert Error(raw_move.InvalidRank) = raw_move.parse("a$b4")
@@ -53,7 +59,7 @@ pub fn no_piece_at_start_test() {
 pub fn game_over_test() {
   let assert Ok(game) = game.from_fen("B:W18:B14")
   let assert Ok(game) = game.move(game, "c5e3")
-  assert game.is_over && game.active_color == Black
+  assert game.is_over && game.active_color == board.Black
 }
 
 pub fn simple_move_test() {
@@ -101,13 +107,17 @@ pub fn must_complete_capture_path_test() {
 pub fn piece_promotion_test() {
   let assert Ok(game) = game.from_fen("B:B26:W11")
   let assert Ok(game) = game.move(game, "d2c1")
+
+  let assert Ok(index) = board.from_int(29)
   let assert Ok(board.King(board.Black)) =
-    iv.get_or_default(game.board, 29, board.Empty) |> board.get_piece()
+    board.get(game.board, index) |> board.get_piece()
 
   let assert Ok(game) = game.from_fen("W:B26:W6")
   let assert Ok(game) = game.move(game, "c7d8")
+
+  let assert Ok(index) = board.from_int(1)
   let assert Ok(board.King(board.White)) =
-    iv.get_or_default(game.board, 1, board.Empty) |> board.get_piece()
+    board.get(game.board, index) |> board.get_piece()
 }
 
 pub fn no_duplicate_positions_in_fen_test() {

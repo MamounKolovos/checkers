@@ -5,13 +5,26 @@ import gleam/string
 import gleam_community/ansi
 import iv
 
-pub type Position {
-  Position(row: Int, col: Int)
+pub opaque type BoardIndex {
+  BoardIndex(Int)
 }
 
-pub fn index_to_row_col(index: Int) -> #(Int, Int) {
-  let row = index / 4
-  let offset = index % 4
+pub fn from_int(i: Int) -> Result(BoardIndex, Nil) {
+  case i >= 0 && i < 32 {
+    True -> BoardIndex(i) |> Ok
+    False -> Nil |> Error
+  }
+}
+
+pub fn to_int(index: BoardIndex) -> Int {
+  let BoardIndex(i) = index
+  i
+}
+
+pub fn index_to_row_col(index: BoardIndex) -> #(Int, Int) {
+  let i = to_int(index)
+  let row = i / 4
+  let offset = i % 4
 
   let col = case row % 2 {
     0 -> offset * 2 + 1
@@ -22,20 +35,8 @@ pub fn index_to_row_col(index: Int) -> #(Int, Int) {
   #(row, col)
 }
 
-pub fn row_col_to_index(row: Int, col: Int) -> Int {
-  { row * 8 + col } / 2
-}
-
-pub fn position_to_index(position: Position) -> Int {
-  position.row * 4 + position.col
-}
-
-pub fn position_to_square(board: Board, position: Position) -> Square {
-  iv.get_or_default(board, position_to_index(position), Empty)
-}
-
-pub fn is_valid_position(position: Position) -> Bool {
-  { position.row + position.col } % 2 == 1
+pub fn row_col_to_index(row: Int, col: Int) -> Result(BoardIndex, Nil) {
+  from_int({ row * 8 + col } / 2)
 }
 
 pub type Color {
@@ -90,17 +91,34 @@ fn square_to_str(square: Square) -> String {
   }
 }
 
-pub type Board =
-  iv.Array(Square)
+pub opaque type Board {
+  Board(iv.Array(Square))
+}
+
+pub fn empty() -> Board {
+  Board(iv.repeat(Empty, 32))
+}
+
+pub fn get(from board: Board, at index: BoardIndex) -> Square {
+  let Board(squares) = board
+  let assert Ok(square) = iv.get(from: squares, at: to_int(index))
+  square
+}
+
+pub fn set(in board: Board, at index: BoardIndex, to square: Square) -> Board {
+  let Board(squares) = board
+  let assert Ok(squares) = iv.set(in: squares, at: to_int(index), to: square)
+  Board(squares)
+}
 
 fn row_to_string(row: Int, board: Board) -> String {
   let columns =
     list.range(0, 7)
     |> list.map(fn(col) {
-      let i = row * 8 + col
       case { row + col } % 2 == 1 {
         True -> {
-          let square = iv.get_or_default(board, i / 2, or: Empty)
+          let assert Ok(index) = row_col_to_index(row, col)
+          let square = get(board, at: index)
           square_to_str(square)
         }
         False -> " "
