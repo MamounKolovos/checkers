@@ -185,9 +185,11 @@ type CaptureBuilder {
 type CaptureSearch {
   CaptureSearch(
     game: Game,
-    from: board.BoardIndex,
     piece: board.Piece,
-    builder: CaptureBuilder,
+    from: board.BoardIndex,
+    current: board.BoardIndex,
+    path: List(board.BoardIndex),
+    captured: List(board.BoardIndex),
     acc: List(CaptureBuilder),
   )
 }
@@ -197,30 +199,25 @@ fn generate_capture_builders(
   from: board.BoardIndex,
   piece: board.Piece,
 ) -> List(CaptureBuilder) {
-  let assert Ok(dummy) = board.from_int(0)
   generate_capture_builders_loop(
     CaptureSearch(
       game:,
-      from:,
       piece:,
-      builder: CaptureBuilder(
-        piece:,
-        from:,
-        middle: [],
-        to: dummy,
-        captured: [],
-      ),
+      from:,
+      current: from,
+      path: [],
+      captured: [],
       acc: [],
     ),
   )
 }
 
-//TODO: account for promotions
 fn generate_capture_builders_loop(
   capture_search: CaptureSearch,
 ) -> List(CaptureBuilder) {
-  let CaptureSearch(game, from, piece, builder, acc) = capture_search
-  let #(from_row, from_col) = board.index_to_row_col(from)
+  let CaptureSearch(game:, piece:, from:, current:, path:, captured:, acc:) =
+    capture_search
+  let #(from_row, from_col) = board.index_to_row_col(current)
   let next_indexes =
     case piece {
       board.Man(board.Black) -> [#(2, 2), #(2, -2)]
@@ -252,33 +249,27 @@ fn generate_capture_builders_loop(
         _ -> Error(Nil)
       }
     })
-
-  case next_indexes, builder {
-    //no paths and no captures means a capture never occurred
-    [], CaptureBuilder(captured: [], ..) -> []
-    //no paths and some captures means the current path was fully explored
-    [], CaptureBuilder(middle: [to, ..middle], captured:, ..) ->
-      list.prepend(
-        acc,
-        CaptureBuilder(
-          ..builder,
-          middle: list.reverse(middle),
-          to:,
-          captured: list.reverse(captured),
-        ),
-      )
-    next_indexes, CaptureBuilder(middle:, captured:, ..) ->
+  case next_indexes, path, captured {
+    [], [], [] -> []
+    [], [to, ..rest], captured -> [
+      CaptureBuilder(
+        piece:,
+        from:,
+        middle: list.reverse(rest),
+        to:,
+        captured: list.reverse(captured),
+      ),
+      ..acc
+    ]
+    next_indexes, path, captured ->
       list.flat_map(next_indexes, fn(data) {
-        let #(to, capture_index) = data
+        let #(next, capture_index) = data
         generate_capture_builders_loop(
           CaptureSearch(
             ..capture_search,
-            from: to,
-            builder: CaptureBuilder(
-              ..builder,
-              middle: [to, ..middle],
-              captured: [capture_index, ..captured],
-            ),
+            current: next,
+            path: [next, ..path],
+            captured: [capture_index, ..captured],
           ),
         )
       })
