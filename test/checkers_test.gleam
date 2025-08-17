@@ -74,6 +74,11 @@ pub fn capture_move_test() {
   assert game.white_count == 1
 }
 
+pub fn capture_requires_empty_destination_test() {
+  let assert Ok(game) = game.from_fen("W:B18,15:W22")
+  let assert Error(game.InvalidSimpleMove) = game.move(game, "c3e5")
+}
+
 pub fn multi_capture_move_test() {
   let assert Ok(game) = game.from_fen("B:W18,27,28:B14")
   let assert Ok(game) = game.move(game, "c5e3g1")
@@ -118,6 +123,14 @@ pub fn piece_promotion_test() {
   let assert Ok(index) = board.from_int(1)
   let assert Ok(board.King(board.White)) =
     board.get(game.board, index) |> board.get_piece()
+}
+
+pub fn no_moves_for_piece_test() {
+  let assert Ok(game) = game.from_fen("W:B13,15,17,18:W22")
+  let assert Error(game.NoMovesForPiece) = game.move(game, "c3d4")
+  let assert Error(game.NoMovesForPiece) = game.move(game, "c3b5")
+  let assert Error(game.NoMovesForPiece) = game.move(game, "c3e5")
+  let assert Error(game.NoMovesForPiece) = game.move(game, "c3a5")
 }
 
 pub fn no_duplicate_positions_in_fen_test() {

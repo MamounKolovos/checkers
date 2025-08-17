@@ -19,8 +19,11 @@ pub fn to_string(error: Error) -> String {
 fn game_error_to_string(error: game.Error) -> String {
   case error {
     game.NoPieceAtStart -> "No piece at starting position"
-    game.InvalidSimpleMove -> "Invalid simple move"
-    game.InvalidCaptureMove -> "Invalid capture move"
+    game.InvalidSimpleMove ->
+      "Invalid move: must choose from the available simple moves"
+    game.InvalidCaptureMove ->
+      "Invalid move: must choose from the available capture moves"
+    game.NoMovesForPiece -> "No moves available for selected piece"
     game.FenError(error) -> fen_error_to_string(error)
     game.RawMoveError(error) -> raw_move_error_to_string(error)
   }

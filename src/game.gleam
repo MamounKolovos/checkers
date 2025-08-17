@@ -10,6 +10,7 @@ pub type Error {
   NoPieceAtStart
   InvalidSimpleMove
   InvalidCaptureMove
+  NoMovesForPiece
   FenError(fen.Error)
   RawMoveError(raw_move.Error)
 }
@@ -107,14 +108,20 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
     |> result.replace_error(NoPieceAtStart),
   )
 
-  case generate_capture_builders(game, from, piece), middle {
-    // In American Checkers, simple moves can only be taken if no captures are possible
-    [], [] -> {
+  let capture_builders = generate_capture_builders(game, from, piece)
+  let simple_builders = generate_simple_builders(game, from, piece)
+
+  case capture_builders, simple_builders {
+    //no moves available
+    [], [] -> Error(NoMovesForPiece)
+    // Player is allowed to do a simple move since no captures are possible
+    [], simple_builders -> {
       use SimpleBuilder(piece:, from:, to:) <- result.map(
-        generate_simple_builders(game, from, piece)
+        simple_builders
         |> list.find(fn(builder) { builder.from == from && builder.to == to })
         |> result.replace_error(InvalidSimpleMove),
       )
+      // Promotion
       let #(row, _) = board.index_to_row_col(to)
       case piece, row {
         board.Man(Black as color), 7 | board.Man(White as color), 0 ->
@@ -122,7 +129,8 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
         piece, _ -> Simple(piece:, from:, to:)
       }
     }
-    capture_builders, middle -> {
+    // Player must do a capture move when one is available
+    capture_builders, _ -> {
       use CaptureBuilder(piece:, from:, middle: _, to:, captured:) <- result.map(
         capture_builders
         |> list.find(fn(builder) {
@@ -130,6 +138,7 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
         })
         |> result.replace_error(InvalidCaptureMove),
       )
+      // Promotion
       let #(row, _) = board.index_to_row_col(to)
       case piece, row {
         board.Man(Black as color), 7 | board.Man(White as color), 0 ->
@@ -229,23 +238,29 @@ fn generate_capture_builders_loop(
 
       let new_row = from_row + offset_row
       let new_col = from_col + offset_col
-      use to <- result.try(board.row_col_to_index(new_row, new_col))
 
       use <- bool.guard(
         new_row < 0 || new_row > 7 || new_col < 0 || new_col > 7,
         return: Error(Nil),
       )
 
-      let capture_row = from_row + { offset_row / 2 }
-      let capture_col = from_col + { offset_col / 2 }
-      use capture_index <- result.try(board.row_col_to_index(
-        capture_row,
-        capture_col,
-      ))
+      use to <- result.try(board.row_col_to_index(new_row, new_col))
+      // destination square must be empty in order to jump to it
+      case board.get(game.board, at: to) {
+        board.Empty -> {
+          let capture_row = from_row + { offset_row / 2 }
+          let capture_col = from_col + { offset_col / 2 }
+          use capture_index <- result.try(board.row_col_to_index(
+            capture_row,
+            capture_col,
+          ))
 
-      case board.get(game.board, at: capture_index) {
-        board.Occupied(capture_piece) if capture_piece.color != piece.color ->
-          #(to, capture_index) |> Ok
+          case board.get(game.board, at: capture_index) {
+            board.Occupied(capture_piece) if capture_piece.color != piece.color ->
+              #(to, capture_index) |> Ok
+            _ -> Error(Nil)
+          }
+        }
         _ -> Error(Nil)
       }
     })
