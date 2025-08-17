@@ -7,6 +7,7 @@ import gleam/result
 import raw_move.{type RawMove}
 
 pub type Error {
+  MoveAfterGameOver
   NoPieceAtStart
   InvalidSimpleMove
   InvalidCaptureMove
@@ -60,6 +61,8 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
 }
 
 pub fn move(game: Game, request: String) -> Result(Game, Error) {
+  use <- bool.guard(game.is_over, return: Error(MoveAfterGameOver))
+
   use raw_move <- result.try(
     raw_move.parse(request) |> result.map_error(RawMoveError),
   )

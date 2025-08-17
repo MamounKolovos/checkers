@@ -62,6 +62,13 @@ pub fn game_over_test() {
   assert game.is_over && game.active_color == board.Black
 }
 
+pub fn move_after_game_over_test() {
+  let assert Ok(game) = game.from_fen("B:W18:B14")
+  let assert Ok(game) = game.move(game, "c5e3")
+  assert game.is_over && game.active_color == board.Black
+  let assert Error(game.MoveAfterGameOver) = game.move(game, "e3f2")
+}
+
 pub fn simple_move_test() {
   let game = game.create()
   let assert Ok(game) = game.move(game, "b6a5")
