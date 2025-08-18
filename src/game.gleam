@@ -22,7 +22,7 @@ pub opaque type Move {
     piece: board.Piece,
     from: board.BoardIndex,
     to: board.BoardIndex,
-    captured: List(#(board.BoardIndex, board.Piece)),
+    captured: List(board.BoardIndex),
   )
 }
 
@@ -82,9 +82,8 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
         game.board
         |> board.set(at: from, to: board.Empty)
         |> board.set(at: to, to: board.Occupied(piece))
-        |> list.fold(captured, from: _, with: fn(acc, square) {
-          let #(index, _) = square
-          board.set(acc, at: index, to: board.Empty)
+        |> list.fold(captured, from: _, with: fn(acc, square_index) {
+          board.set(acc, at: square_index, to: board.Empty)
         })
 
       let captured_count = list.length(captured)
@@ -191,7 +190,7 @@ type CaptureBuilder {
     from: board.BoardIndex,
     middle: List(board.BoardIndex),
     to: board.BoardIndex,
-    captured: List(#(board.BoardIndex, board.Piece)),
+    captured: List(board.BoardIndex),
   )
 }
 
@@ -202,7 +201,7 @@ type CaptureSearch {
     from: board.BoardIndex,
     current: board.BoardIndex,
     path: List(board.BoardIndex),
-    captured: List(#(board.BoardIndex, board.Piece)),
+    captured: List(board.BoardIndex),
     acc: List(CaptureBuilder),
   )
 }
@@ -261,7 +260,7 @@ fn generate_capture_builders_loop(
 
           case board.get(game.board, at: capture_index) {
             board.Occupied(capture_piece) if capture_piece.color != piece.color ->
-              #(to, #(capture_index, capture_piece)) |> Ok
+              #(to, capture_index) |> Ok
             _ -> Error(Nil)
           }
         }
@@ -282,13 +281,13 @@ fn generate_capture_builders_loop(
     ]
     next_indexes, path, captured ->
       list.flat_map(next_indexes, fn(data) {
-        let #(next, #(capture_index, capture_piece)) = data
+        let #(next, capture_index) = data
         generate_capture_builders_loop(
           CaptureSearch(
             ..capture_search,
             current: next,
             path: [next, ..path],
-            captured: [#(capture_index, capture_piece), ..captured],
+            captured: [capture_index, ..captured],
           ),
         )
       })
