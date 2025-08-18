@@ -3,6 +3,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
 
 pub type Error {
@@ -15,9 +16,8 @@ pub type Error {
 pub type ParseResult {
   ParseResult(
     active_color: board.Color,
-    squares: Dict(board.BoardIndex, board.Piece),
-    white_count: Int,
-    black_count: Int,
+    white_squares: Dict(board.BoardIndex, board.Piece),
+    black_squares: Dict(board.BoardIndex, board.Piece),
   )
 }
 
@@ -31,7 +31,7 @@ pub fn parse(fen: String) -> Result(ParseResult, Error) {
   use fen <- result.try(parse_colon(fen))
   use #(color1, fen) <- result.try(parse_color(fen))
   // consume the first color's squares, stopping only when seeing a colon
-  use #(squares, squares1_count, fen) <- result.try(parse_pieces_until_colon(
+  use #(indices, squares1, fen) <- result.try(parse_pieces_until_colon(
     fen,
     color1,
   ))
@@ -39,19 +39,16 @@ pub fn parse(fen: String) -> Result(ParseResult, Error) {
   use fen <- result.try(parse_colon(fen))
   use #(color2, fen) <- result.try(parse_color(fen))
   // consume the second color's squares, stopping only when seeing the end of the string
-  use #(squares, squares2_count, _) <- result.try(parse_pieces_until_eos(
-    fen,
-    color2,
-    squares,
-  ))
+  use squares2 <- result.try(parse_pieces_until_eos(fen, color2, indices))
 
   // ensure the first and second colors are unique from each other
-  use #(white_count, black_count) <- result.try(case color1, color2 {
-    board.White, board.Black -> #(squares1_count, squares2_count) |> Ok
-    board.Black, board.White -> #(squares2_count, squares1_count) |> Ok
+  use #(white_squares, black_squares) <- result.try(case color1, color2 {
+    board.White, board.Black -> #(squares1, squares2) |> Ok
+    board.Black, board.White -> #(squares2, squares1) |> Ok
     _, _ -> Error(SegmentMismatch)
   })
-  ParseResult(active_color:, squares:, white_count:, black_count:) |> Ok
+  ParseResult(active_color:, white_squares:, black_squares:)
+  |> Ok
 }
 
 fn parse_color(fen: String) -> Result(#(board.Color, String), Error) {
@@ -74,30 +71,44 @@ fn parse_colon(fen: String) -> Result(String, Error) {
 fn parse_pieces_until_colon(
   fen: String,
   color: board.Color,
-) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
-  parse_pieces_until_colon_loop(fen, color, dict.new(), 0)
+) -> Result(
+  #(Set(board.BoardIndex), Dict(board.BoardIndex, board.Piece), String),
+  Error,
+) {
+  parse_pieces_until_colon_loop(fen, color, set.new(), dict.new())
 }
 
 fn parse_pieces_until_colon_loop(
   fen: String,
   color: board.Color,
-  acc: Dict(board.BoardIndex, board.Piece),
-  count: Int,
-) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
+  indices: Set(board.BoardIndex),
+  squares: Dict(board.BoardIndex, board.Piece),
+) -> Result(
+  #(Set(board.BoardIndex), Dict(board.BoardIndex, board.Piece), String),
+  Error,
+) {
   use #(index, piece, fen) <- result.try(parse_full_piece(fen, color, False))
-  use <- bool.guard(dict.has_key(acc, index), return: Error(DuplicateFound))
+  use <- bool.guard(
+    set.contains(indices, this: index),
+    return: Error(DuplicateFound),
+  )
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
       parse_pieces_until_colon_loop(
         rest,
         color,
-        dict.insert(acc, for: index, insert: piece),
-        count + 1,
+        set.insert(indices, this: index),
+        dict.insert(squares, for: index, insert: piece),
       )
     }
     Ok(#(":", _)) ->
-      #(dict.insert(acc, for: index, insert: piece), count + 1, fen) |> Ok
+      #(
+        set.insert(indices, this: index),
+        dict.insert(squares, for: index, insert: piece),
+        fen,
+      )
+      |> Ok
     Ok(#(first, _)) ->
       UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
     Error(_) -> UnexpectedChar(expected: "1-32 or , or EOS", got: "") |> Error
@@ -107,33 +118,37 @@ fn parse_pieces_until_colon_loop(
 fn parse_pieces_until_eos(
   fen: String,
   color: board.Color,
-  acc: Dict(board.BoardIndex, board.Piece),
-) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
-  parse_pieces_until_eos_loop(fen, color, acc, 0)
+  indices: Set(board.BoardIndex),
+) -> Result(Dict(board.BoardIndex, board.Piece), Error) {
+  parse_pieces_until_eos_loop(fen, color, indices, dict.new())
 }
 
 fn parse_pieces_until_eos_loop(
   fen: String,
   color: board.Color,
-  acc: Dict(board.BoardIndex, board.Piece),
-  count: Int,
-) -> Result(#(Dict(board.BoardIndex, board.Piece), Int, String), Error) {
+  indices: Set(board.BoardIndex),
+  squares: Dict(board.BoardIndex, board.Piece),
+) -> Result(Dict(board.BoardIndex, board.Piece), Error) {
   use #(index, piece, fen) <- result.try(parse_full_piece(fen, color, False))
-  use <- bool.guard(dict.has_key(acc, index), return: Error(DuplicateFound))
+  use <- bool.guard(
+    set.contains(indices, this: index),
+    return: Error(DuplicateFound),
+  )
 
   case string.pop_grapheme(fen) {
     Ok(#(",", rest)) -> {
       parse_pieces_until_eos_loop(
         rest,
         color,
-        dict.insert(acc, for: index, insert: piece),
-        count + 1,
+        set.insert(indices, this: index),
+        dict.insert(squares, for: index, insert: piece),
       )
     }
     Ok(#(first, _)) ->
       UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
     Error(_) ->
-      #(dict.insert(acc, for: index, insert: piece), count + 1, fen) |> Ok
+      dict.insert(squares, for: index, insert: piece)
+      |> Ok
   }
 }
 

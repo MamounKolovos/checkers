@@ -1,7 +1,7 @@
 import board.{type Board, type Color, Black, White}
 import fen
 import gleam/bool
-import gleam/dict
+import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
 import raw_move.{type RawMove}
@@ -30,8 +30,8 @@ pub type Game {
   Game(
     board: Board,
     active_color: Color,
-    white_count: Int,
-    black_count: Int,
+    white_squares: Dict(board.BoardIndex, board.Piece),
+    black_squares: Dict(board.BoardIndex, board.Piece),
     is_over: Bool,
   )
 }
@@ -46,14 +46,20 @@ pub fn create() -> Game {
 
 pub fn from_fen(fen: String) -> Result(Game, Error) {
   case fen.parse(fen) {
-    Ok(fen.ParseResult(active_color:, squares:, white_count:, black_count:)) -> {
+    Ok(fen.ParseResult(active_color:, white_squares:, black_squares:)) -> {
       let board =
-        squares
+        dict.merge(white_squares, black_squares)
         |> dict.fold(from: board.empty(), with: fn(board, index, piece) {
           board.set(board, at: index, to: board.Occupied(piece))
         })
 
-      Game(board:, active_color:, white_count:, black_count:, is_over: False)
+      Game(
+        board:,
+        active_color:,
+        white_squares:,
+        black_squares:,
+        is_over: False,
+      )
       |> Ok
     }
     Error(e) -> Error(FenError(e))
@@ -86,18 +92,24 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
           board.set(acc, at: square_index, to: board.Empty)
         })
 
-      let captured_count = list.length(captured)
-      let #(white_count, black_count) = case game.active_color {
-        Black -> #(game.white_count - captured_count, game.black_count)
-        White -> #(game.white_count, game.black_count - captured_count)
+      let #(white_squares, black_squares) = case game.active_color {
+        Black -> #(
+          dict.drop(game.white_squares, drop: captured),
+          game.black_squares,
+        )
+        White -> #(
+          game.white_squares,
+          dict.drop(game.black_squares, drop: captured),
+        )
       }
 
-      let is_over = white_count == 0 || black_count == 0
+      let is_over =
+        dict.size(white_squares) == 0 || dict.size(black_squares) == 0
       let active_color = case is_over {
         True -> game.active_color
         False -> board.switch_color(game.active_color)
       }
-      Game(board:, active_color:, white_count:, black_count:, is_over:)
+      Game(board:, active_color:, white_squares:, black_squares:, is_over:)
       |> Ok
     }
   }
