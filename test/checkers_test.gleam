@@ -84,9 +84,9 @@ pub fn simple_move_test() {
 
 pub fn capture_move_test() {
   let assert Ok(game) = game.from_fen("B:W23,28:B18")
-  assert dict.size(game.squares.white) == 2
+  assert dict.size(game.white_squares) == 2
   let assert Ok(game) = game.move(game, "d4f2")
-  assert dict.size(game.squares.white) == 1
+  assert dict.size(game.white_squares) == 1
 }
 
 pub fn capture_requires_empty_destination_test() {
@@ -96,9 +96,9 @@ pub fn capture_requires_empty_destination_test() {
 
 pub fn multi_capture_move_test() {
   let assert Ok(game) = game.from_fen("B:W18,27,28:B14")
-  assert dict.size(game.squares.white) == 3
+  assert dict.size(game.white_squares) == 3
   let assert Ok(game) = game.move(game, "c5e3g1")
-  assert dict.size(game.squares.white) == 1
+  assert dict.size(game.white_squares) == 1
 }
 
 pub fn multi_capture_move_1_test() {

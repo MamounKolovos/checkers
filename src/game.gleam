@@ -26,77 +26,14 @@ pub opaque type Move {
   )
 }
 
-pub type Squares {
-  Squares(
-    black: Dict(board.BoardIndex, board.Piece),
-    white: Dict(board.BoardIndex, board.Piece),
-  )
-}
-
-fn get(
-  from squares: Squares,
-  color active_color: board.Color,
-) -> Dict(board.BoardIndex, board.Piece) {
-  case active_color {
-    Black -> squares.black
-    White -> squares.white
-  }
-}
-
-fn insert(
-  into squares: Squares,
-  color active_color: board.Color,
-  for key: board.BoardIndex,
-  insert value: board.Piece,
-) -> Squares {
-  case active_color {
-    Black -> {
-      let black = dict.insert(squares.black, for: key, insert: value)
-      Squares(..squares, black:)
-    }
-    White -> {
-      let white = dict.insert(squares.white, for: key, insert: value)
-      Squares(..squares, white:)
-    }
-  }
-}
-
-fn drop(
-  from squares: Squares,
-  color active_color: board.Color,
-  drop disallowed_keys: List(board.BoardIndex),
-) -> Squares {
-  case active_color {
-    Black -> {
-      let black = dict.drop(squares.black, drop: disallowed_keys)
-      Squares(..squares, black:)
-    }
-    White -> {
-      let white = dict.drop(squares.white, drop: disallowed_keys)
-      Squares(..squares, white:)
-    }
-  }
-}
-
-fn delete(
-  from squares: Squares,
-  color active_color: board.Color,
-  delete key: board.BoardIndex,
-) -> Squares {
-  case active_color {
-    Black -> {
-      let black = dict.delete(squares.black, delete: key)
-      Squares(..squares, black:)
-    }
-    White -> {
-      let white = dict.delete(squares.white, delete: key)
-      Squares(..squares, white:)
-    }
-  }
-}
-
 pub type Game {
-  Game(board: Board, active_color: Color, squares: Squares, is_over: Bool)
+  Game(
+    board: Board,
+    active_color: Color,
+    black_squares: Dict(board.BoardIndex, board.Piece),
+    white_squares: Dict(board.BoardIndex, board.Piece),
+    is_over: Bool,
+  )
 }
 
 pub fn create() -> Game {
@@ -116,9 +53,13 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
           board.set(board, at: index, to: board.Occupied(piece))
         })
 
-      let squares = Squares(black: black_squares, white: white_squares)
-
-      Game(board:, active_color:, squares:, is_over: False)
+      Game(
+        board:,
+        active_color:,
+        black_squares:,
+        white_squares:,
+        is_over: False,
+      )
       |> Ok
     }
     Error(e) -> Error(FenError(e))
@@ -140,13 +81,28 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
         |> board.set(at: from, to: board.Empty)
         |> board.set(at: to, to: board.Occupied(piece))
 
-      let squares =
-        game.squares
-        |> delete(color: game.active_color, delete: from)
-        |> insert(color: game.active_color, for: to, insert: piece)
+      let #(black_squares, white_squares) = case game.active_color {
+        Black -> {
+          let black_squares =
+            game.black_squares
+            |> dict.delete(delete: from)
+            |> dict.insert(for: to, insert: piece)
+          #(black_squares, game.white_squares)
+        }
+        White -> {
+          let white_squares =
+            game.white_squares
+            |> dict.delete(delete: from)
+            |> dict.insert(for: to, insert: piece)
+          #(game.black_squares, white_squares)
+        }
+      }
 
       let has_pieces_left =
-        get(squares, board.switch_color(game.active_color))
+        case game.active_color {
+          Black -> white_squares
+          White -> black_squares
+        }
         // keep pieces with legal moves
         |> dict.filter(keeping: fn(index, piece) {
           let capture_builders = generate_capture_builders(board, index, piece)
@@ -163,7 +119,14 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
         True -> game.active_color
         False -> board.switch_color(game.active_color)
       }
-      Game(board:, squares:, active_color:, is_over: has_pieces_left) |> Ok
+      Game(
+        board:,
+        active_color:,
+        black_squares:,
+        white_squares:,
+        is_over: has_pieces_left,
+      )
+      |> Ok
     }
     Capture(piece:, from:, to:, captured:) -> {
       let board =
@@ -174,14 +137,30 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
           board.set(acc, at: square_index, to: board.Empty)
         })
 
-      let squares =
-        game.squares
-        |> delete(color: game.active_color, delete: from)
-        |> insert(color: game.active_color, for: to, insert: piece)
-        |> drop(color: board.switch_color(game.active_color), drop: captured)
+      let #(black_squares, white_squares) = case game.active_color {
+        Black -> {
+          let black_squares =
+            game.black_squares
+            |> dict.delete(delete: from)
+            |> dict.insert(for: to, insert: piece)
+          let white_squares = dict.drop(game.white_squares, drop: captured)
+          #(black_squares, white_squares)
+        }
+        White -> {
+          let white_squares =
+            game.white_squares
+            |> dict.delete(delete: from)
+            |> dict.insert(for: to, insert: piece)
+          let black_squares = dict.drop(game.black_squares, drop: captured)
+          #(black_squares, white_squares)
+        }
+      }
 
       let has_pieces_left =
-        get(squares, board.switch_color(game.active_color))
+        case game.active_color {
+          Black -> white_squares
+          White -> black_squares
+        }
         // keep pieces with legal moves
         |> dict.filter(keeping: fn(index, piece) {
           let capture_builders = generate_capture_builders(board, index, piece)
@@ -195,14 +174,14 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
         |> dict.is_empty()
 
       let is_over =
-        dict.size(squares.black) == 0
-        || dict.size(squares.white) == 0
+        dict.size(black_squares) == 0
+        || dict.size(white_squares) == 0
         || has_pieces_left
       let active_color = case is_over {
         True -> game.active_color
         False -> board.switch_color(game.active_color)
       }
-      Game(board:, active_color:, squares:, is_over:)
+      Game(board:, active_color:, black_squares:, white_squares:, is_over:)
       |> Ok
     }
   }
