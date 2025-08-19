@@ -26,14 +26,77 @@ pub opaque type Move {
   )
 }
 
-pub type Game {
-  Game(
-    board: Board,
-    active_color: Color,
-    white_squares: Dict(board.BoardIndex, board.Piece),
-    black_squares: Dict(board.BoardIndex, board.Piece),
-    is_over: Bool,
+pub type Squares {
+  Squares(
+    black: Dict(board.BoardIndex, board.Piece),
+    white: Dict(board.BoardIndex, board.Piece),
   )
+}
+
+fn get(
+  from squares: Squares,
+  color active_color: board.Color,
+) -> Dict(board.BoardIndex, board.Piece) {
+  case active_color {
+    Black -> squares.black
+    White -> squares.white
+  }
+}
+
+fn insert(
+  into squares: Squares,
+  color active_color: board.Color,
+  for key: board.BoardIndex,
+  insert value: board.Piece,
+) -> Squares {
+  case active_color {
+    Black -> {
+      let black = dict.insert(squares.black, for: key, insert: value)
+      Squares(..squares, black:)
+    }
+    White -> {
+      let white = dict.insert(squares.white, for: key, insert: value)
+      Squares(..squares, white:)
+    }
+  }
+}
+
+fn drop(
+  from squares: Squares,
+  color active_color: board.Color,
+  drop disallowed_keys: List(board.BoardIndex),
+) -> Squares {
+  case active_color {
+    Black -> {
+      let black = dict.drop(squares.black, drop: disallowed_keys)
+      Squares(..squares, black:)
+    }
+    White -> {
+      let white = dict.drop(squares.white, drop: disallowed_keys)
+      Squares(..squares, white:)
+    }
+  }
+}
+
+fn delete(
+  from squares: Squares,
+  color active_color: board.Color,
+  delete key: board.BoardIndex,
+) -> Squares {
+  case active_color {
+    Black -> {
+      let black = dict.delete(squares.black, delete: key)
+      Squares(..squares, black:)
+    }
+    White -> {
+      let white = dict.delete(squares.white, delete: key)
+      Squares(..squares, white:)
+    }
+  }
+}
+
+pub type Game {
+  Game(board: Board, active_color: Color, squares: Squares, is_over: Bool)
 }
 
 pub fn create() -> Game {
@@ -53,13 +116,9 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
           board.set(board, at: index, to: board.Occupied(piece))
         })
 
-      Game(
-        board:,
-        active_color:,
-        white_squares:,
-        black_squares:,
-        is_over: False,
-      )
+      let squares = Squares(black: black_squares, white: white_squares)
+
+      Game(board:, active_color:, squares:, is_over: False)
       |> Ok
     }
     Error(e) -> Error(FenError(e))
@@ -80,8 +139,31 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
         game.board
         |> board.set(at: from, to: board.Empty)
         |> board.set(at: to, to: board.Occupied(piece))
-      let active_color = board.switch_color(game.active_color)
-      Game(..game, board:, active_color:) |> Ok
+
+      let squares =
+        game.squares
+        |> delete(color: game.active_color, delete: from)
+        |> insert(color: game.active_color, for: to, insert: piece)
+
+      let has_pieces_left =
+        get(squares, board.switch_color(game.active_color))
+        // keep pieces with legal moves
+        |> dict.filter(keeping: fn(index, piece) {
+          let capture_builders = generate_capture_builders(board, index, piece)
+          let simple_builders = generate_simple_builders(board, index, piece)
+          case capture_builders, simple_builders {
+            [], [] -> False
+            _, _ -> True
+          }
+        })
+        // game over if none remain
+        |> dict.is_empty()
+
+      let active_color = case has_pieces_left {
+        True -> game.active_color
+        False -> board.switch_color(game.active_color)
+      }
+      Game(board:, squares:, active_color:, is_over: has_pieces_left) |> Ok
     }
     Capture(piece:, from:, to:, captured:) -> {
       let board =
@@ -92,24 +174,35 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
           board.set(acc, at: square_index, to: board.Empty)
         })
 
-      let #(white_squares, black_squares) = case game.active_color {
-        Black -> #(
-          dict.drop(game.white_squares, drop: captured),
-          game.black_squares,
-        )
-        White -> #(
-          game.white_squares,
-          dict.drop(game.black_squares, drop: captured),
-        )
-      }
+      let squares =
+        game.squares
+        |> delete(color: game.active_color, delete: from)
+        |> insert(color: game.active_color, for: to, insert: piece)
+        |> drop(color: board.switch_color(game.active_color), drop: captured)
+
+      let has_pieces_left =
+        get(squares, board.switch_color(game.active_color))
+        // keep pieces with legal moves
+        |> dict.filter(keeping: fn(index, piece) {
+          let capture_builders = generate_capture_builders(board, index, piece)
+          let simple_builders = generate_simple_builders(board, index, piece)
+          case capture_builders, simple_builders {
+            [], [] -> False
+            _, _ -> True
+          }
+        })
+        // game over if none remain
+        |> dict.is_empty()
 
       let is_over =
-        dict.size(white_squares) == 0 || dict.size(black_squares) == 0
+        dict.size(squares.black) == 0
+        || dict.size(squares.white) == 0
+        || has_pieces_left
       let active_color = case is_over {
         True -> game.active_color
         False -> board.switch_color(game.active_color)
       }
-      Game(board:, active_color:, white_squares:, black_squares:, is_over:)
+      Game(board:, active_color:, squares:, is_over:)
       |> Ok
     }
   }
@@ -123,8 +216,8 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
     |> result.replace_error(NoPieceAtStart),
   )
 
-  let capture_builders = generate_capture_builders(game, from, piece)
-  let simple_builders = generate_simple_builders(game, from, piece)
+  let capture_builders = generate_capture_builders(game.board, from, piece)
+  let simple_builders = generate_simple_builders(game.board, from, piece)
 
   case capture_builders, simple_builders {
     //no moves available
@@ -173,7 +266,7 @@ type SimpleBuilder {
 }
 
 fn generate_simple_builders(
-  game: Game,
+  board: Board,
   from: board.BoardIndex,
   piece: board.Piece,
 ) -> List(SimpleBuilder) {
@@ -189,7 +282,7 @@ fn generate_simple_builders(
   |> list.filter_map(fn(offset) {
     let #(row, col) = offset
     use to <- result.try(board.row_col_to_index(from_row + row, from_col + col))
-    case board.get(game.board, to) {
+    case board.get(board, to) {
       board.Empty -> SimpleBuilder(piece:, from:, to:) |> Ok
       _ -> Error(Nil)
     }
@@ -208,7 +301,7 @@ type CaptureBuilder {
 
 type CaptureSearch {
   CaptureSearch(
-    game: Game,
+    board: Board,
     piece: board.Piece,
     from: board.BoardIndex,
     current: board.BoardIndex,
@@ -219,13 +312,13 @@ type CaptureSearch {
 }
 
 fn generate_capture_builders(
-  game: Game,
+  board: Board,
   from: board.BoardIndex,
   piece: board.Piece,
 ) -> List(CaptureBuilder) {
   generate_capture_builders_loop(
     CaptureSearch(
-      game:,
+      board:,
       piece:,
       from:,
       current: from,
@@ -239,7 +332,7 @@ fn generate_capture_builders(
 fn generate_capture_builders_loop(
   capture_search: CaptureSearch,
 ) -> List(CaptureBuilder) {
-  let CaptureSearch(game:, piece:, from:, current:, path:, captured:, acc:) =
+  let CaptureSearch(board:, piece:, from:, current:, path:, captured:, acc:) =
     capture_search
   let #(from_row, from_col) = board.index_to_row_col(current)
   let next_indexes =
@@ -261,7 +354,7 @@ fn generate_capture_builders_loop(
 
       use to <- result.try(board.row_col_to_index(new_row, new_col))
       // destination square must be empty in order to jump to it
-      case board.get(game.board, at: to) {
+      case board.get(board, at: to) {
         board.Empty -> {
           let capture_row = from_row + { offset_row / 2 }
           let capture_col = from_col + { offset_col / 2 }
@@ -270,7 +363,7 @@ fn generate_capture_builders_loop(
             capture_col,
           ))
 
-          case board.get(game.board, at: capture_index) {
+          case board.get(board, at: capture_index) {
             board.Occupied(capture_piece) if capture_piece.color != piece.color ->
               #(to, capture_index) |> Ok
             _ -> Error(Nil)

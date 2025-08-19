@@ -57,9 +57,15 @@ pub fn no_piece_at_start_test() {
   let assert Error(game.NoPieceAtStart) = game.from_raw(game, raw_move)
 }
 
-pub fn game_over_test() {
+pub fn game_over_all_captured_test() {
   let assert Ok(game) = game.from_fen("B:W18:B14")
   let assert Ok(game) = game.move(game, "c5e3")
+  assert game.is_over && game.active_color == board.Black
+}
+
+pub fn game_over_no_legal_moves_test() {
+  let assert Ok(game) = game.from_fen("B:B10,13,14,23,24,28:W17,32")
+  let assert Ok(game) = game.move(game, "g3f2")
   assert game.is_over && game.active_color == board.Black
 }
 
@@ -78,9 +84,9 @@ pub fn simple_move_test() {
 
 pub fn capture_move_test() {
   let assert Ok(game) = game.from_fen("B:W23,28:B18")
-  assert dict.size(game.white_squares) == 2
+  assert dict.size(game.squares.white) == 2
   let assert Ok(game) = game.move(game, "d4f2")
-  assert dict.size(game.white_squares) == 1
+  assert dict.size(game.squares.white) == 1
 }
 
 pub fn capture_requires_empty_destination_test() {
@@ -90,9 +96,9 @@ pub fn capture_requires_empty_destination_test() {
 
 pub fn multi_capture_move_test() {
   let assert Ok(game) = game.from_fen("B:W18,27,28:B14")
-  assert dict.size(game.white_squares) == 3
+  assert dict.size(game.squares.white) == 3
   let assert Ok(game) = game.move(game, "c5e3g1")
-  assert dict.size(game.white_squares) == 1
+  assert dict.size(game.squares.white) == 1
 }
 
 pub fn multi_capture_move_1_test() {
