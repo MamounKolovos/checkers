@@ -69,6 +69,13 @@ pub fn game_over_no_legal_moves_test() {
   assert game.is_over && game.active_color == board.Black
 }
 
+/// The most recent fen grammar spec doesn't support positions with no pieces for one of the players
+/// which is why we don't test that game over case
+pub fn game_over_on_fen_load_test() {
+  let assert Ok(game) = game.from_fen("W:B10,13,14,23,27,28:W17,32")
+  assert game.is_over && game.active_color == board.Black
+}
+
 pub fn move_after_game_over_test() {
   let assert Ok(game) = game.from_fen("B:W18:B14")
   let assert Ok(game) = game.move(game, "c5e3")
@@ -150,7 +157,7 @@ pub fn piece_promotion_test() {
 }
 
 pub fn no_moves_for_piece_test() {
-  let assert Ok(game) = game.from_fen("W:B13,15,17,18:W22")
+  let assert Ok(game) = game.from_fen("W:B13,15,17,18:W22,27")
   let assert Error(game.NoMovesForPiece) = game.move(game, "c3d4")
   let assert Error(game.NoMovesForPiece) = game.move(game, "c3b5")
   let assert Error(game.NoMovesForPiece) = game.move(game, "c3e5")

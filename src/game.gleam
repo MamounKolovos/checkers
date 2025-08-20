@@ -54,13 +54,31 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
           board.set(board, at: index, to: board.Occupied(piece))
         })
 
-      Game(
-        board:,
-        active_color:,
-        black_squares:,
-        white_squares:,
-        is_over: False,
-      )
+      let is_over =
+        case active_color {
+          Black -> black_squares
+          White -> white_squares
+        }
+        // keep pieces with legal moves
+        |> dict.filter(keeping: fn(index, piece) {
+          let capture_builders = generate_capture_builders(board, index, piece)
+          let simple_builders = generate_simple_builders(board, index, piece)
+          case capture_builders, simple_builders {
+            [], [] -> False
+            _, _ -> True
+          }
+        })
+        // game over if none remain
+        |> dict.is_empty()
+
+      // if it's white's turn and they can't move,
+      // `active_color` switches to black since black won
+      let active_color = case is_over {
+        True -> board.switch_color(active_color)
+        False -> active_color
+      }
+
+      Game(board:, active_color:, black_squares:, white_squares:, is_over:)
       |> Ok
     }
     Error(e) -> Error(FenError(e))
