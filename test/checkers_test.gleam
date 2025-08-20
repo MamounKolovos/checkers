@@ -76,6 +76,14 @@ pub fn move_after_game_over_test() {
   let assert Error(game.MoveAfterGameOver) = game.move(game, "e3f2")
 }
 
+pub fn player_cannot_move_opponents_piece_test() {
+  let assert Ok(game) = game.from_fen("B:W22:B9")
+  let assert Error(game.CannotMoveOpponentPiece) = game.move(game, "c3b4")
+
+  let assert Ok(game) = game.from_fen("W:W22:B9")
+  let assert Error(game.CannotMoveOpponentPiece) = game.move(game, "b6a5")
+}
+
 pub fn simple_move_test() {
   let game = game.create()
   let assert Ok(game) = game.move(game, "b6a5")

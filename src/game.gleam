@@ -8,6 +8,7 @@ import raw_move.{type RawMove}
 
 pub type Error {
   MoveAfterGameOver
+  CannotMoveOpponentPiece
   NoPieceAtStart
   InvalidSimpleMove
   InvalidCaptureMove
@@ -193,6 +194,10 @@ pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
     board.get(game.board, at: from)
     |> board.get_piece()
     |> result.replace_error(NoPieceAtStart),
+  )
+  use <- bool.guard(
+    game.active_color != piece.color,
+    return: Error(CannotMoveOpponentPiece),
   )
 
   let capture_builders = generate_capture_builders(game.board, from, piece)
