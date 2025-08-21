@@ -93,59 +93,29 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
   )
   use move <- result.try(from_raw(game, raw_move))
 
-  case move {
+  let #(board, black_squares, white_squares) = case move {
     Simple(piece:, from:, to:) -> {
       let board =
         game.board
         |> board.set(at: from, to: board.Empty)
         |> board.set(at: to, to: board.Occupied(piece))
 
-      let #(black_squares, white_squares) = case game.active_color {
-        Black -> {
-          let black_squares =
-            game.black_squares
+      case game.active_color {
+        Black -> #(
+          board,
+          game.black_squares
             |> dict.delete(delete: from)
-            |> dict.insert(for: to, insert: piece)
-          #(black_squares, game.white_squares)
-        }
-        White -> {
-          let white_squares =
-            game.white_squares
+            |> dict.insert(for: to, insert: piece),
+          game.white_squares,
+        )
+        White -> #(
+          board,
+          game.black_squares,
+          game.white_squares
             |> dict.delete(delete: from)
-            |> dict.insert(for: to, insert: piece)
-          #(game.black_squares, white_squares)
-        }
+            |> dict.insert(for: to, insert: piece),
+        )
       }
-
-      let has_pieces_left =
-        case game.active_color {
-          Black -> white_squares
-          White -> black_squares
-        }
-        // keep pieces with legal moves
-        |> dict.filter(keeping: fn(index, piece) {
-          let capture_builders = generate_capture_builders(board, index, piece)
-          let simple_builders = generate_simple_builders(board, index, piece)
-          case capture_builders, simple_builders {
-            [], [] -> False
-            _, _ -> True
-          }
-        })
-        // game over if none remain
-        |> dict.is_empty()
-
-      let active_color = case has_pieces_left {
-        True -> game.active_color
-        False -> board.switch_color(game.active_color)
-      }
-      Game(
-        board:,
-        active_color:,
-        black_squares:,
-        white_squares:,
-        is_over: has_pieces_left,
-      )
-      |> Ok
     }
     Capture(piece:, from:, to:, captured:) -> {
       let board =
@@ -156,54 +126,58 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
           board.set(acc, at: square_index, to: board.Empty)
         })
 
-      let #(black_squares, white_squares) = case game.active_color {
+      case game.active_color {
         Black -> {
-          let black_squares =
+          #(
+            board,
             game.black_squares
-            |> dict.delete(delete: from)
-            |> dict.insert(for: to, insert: piece)
-          let white_squares = dict.drop(game.white_squares, drop: captured)
-          #(black_squares, white_squares)
+              |> dict.delete(delete: from)
+              |> dict.insert(for: to, insert: piece),
+            dict.drop(game.white_squares, drop: captured),
+          )
         }
         White -> {
-          let white_squares =
+          #(
+            board,
+            dict.drop(game.black_squares, drop: captured),
             game.white_squares
-            |> dict.delete(delete: from)
-            |> dict.insert(for: to, insert: piece)
-          let black_squares = dict.drop(game.black_squares, drop: captured)
-          #(black_squares, white_squares)
+              |> dict.delete(delete: from)
+              |> dict.insert(for: to, insert: piece),
+          )
         }
       }
-
-      let has_pieces_left =
-        case game.active_color {
-          Black -> white_squares
-          White -> black_squares
-        }
-        // keep pieces with legal moves
-        |> dict.filter(keeping: fn(index, piece) {
-          let capture_builders = generate_capture_builders(board, index, piece)
-          let simple_builders = generate_simple_builders(board, index, piece)
-          case capture_builders, simple_builders {
-            [], [] -> False
-            _, _ -> True
-          }
-        })
-        // game over if none remain
-        |> dict.is_empty()
-
-      let is_over =
-        dict.size(black_squares) == 0
-        || dict.size(white_squares) == 0
-        || has_pieces_left
-      let active_color = case is_over {
-        True -> game.active_color
-        False -> board.switch_color(game.active_color)
-      }
-      Game(board:, active_color:, black_squares:, white_squares:, is_over:)
-      |> Ok
     }
   }
+
+  let opponent_has_pieces_left =
+    // get opposite colored squares
+    // if black moved, need to see if white can make any moves
+    case game.active_color {
+      Black -> white_squares
+      White -> black_squares
+    }
+    // keep pieces with legal moves
+    |> dict.filter(keeping: fn(index, piece) {
+      let capture_builders = generate_capture_builders(board, index, piece)
+      let simple_builders = generate_simple_builders(board, index, piece)
+      case capture_builders, simple_builders {
+        [], [] -> False
+        _, _ -> True
+      }
+    })
+    // game over if none remain
+    |> dict.is_empty()
+
+  let is_over =
+    dict.size(black_squares) == 0
+    || dict.size(white_squares) == 0
+    || opponent_has_pieces_left
+  let active_color = case is_over {
+    True -> game.active_color
+    False -> board.switch_color(game.active_color)
+  }
+  Game(board:, active_color:, black_squares:, white_squares:, is_over:)
+  |> Ok
 }
 
 pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
