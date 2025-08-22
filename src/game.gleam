@@ -19,12 +19,18 @@ pub type Error {
 
 pub type Game {
   Game(
+    state: GameState,
     board: Board,
     active_color: board.Color,
     black_squares: Dict(board.BoardIndex, board.Piece),
     white_squares: Dict(board.BoardIndex, board.Piece),
-    is_over: Bool,
   )
+}
+
+pub type GameState {
+  Win(board.Color)
+  Draw
+  Ongoing
 }
 
 pub fn create() -> Game {
@@ -44,7 +50,7 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
           board.set(board, at: index, to: board.Occupied(piece))
         })
 
-      let is_over =
+      let has_pieces_left =
         case active_color {
           board.Black -> black_squares
           board.White -> white_squares
@@ -61,14 +67,12 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
         // game over if none remain
         |> dict.is_empty()
 
-      // if it's white's turn and they can't move,
-      // `active_color` switches to black since black won
-      let active_color = case is_over {
-        True -> board.switch_color(active_color)
-        False -> active_color
+      let state = case has_pieces_left {
+        True -> Win(board.switch_color(active_color))
+        False -> Ongoing
       }
 
-      Game(board:, active_color:, black_squares:, white_squares:, is_over:)
+      Game(state:, board:, active_color:, black_squares:, white_squares:)
       |> Ok
     }
     Error(e) -> Error(FenError(e))
@@ -76,7 +80,7 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
 }
 
 pub fn move(game: Game, request: String) -> Result(Game, Error) {
-  use <- bool.guard(game.is_over, return: Error(MoveAfterGameOver))
+  use <- bool.guard(game.state != Ongoing, return: Error(MoveAfterGameOver))
 
   use #(from, middle, to) <- result.try(
     raw_move.parse(request)
@@ -89,6 +93,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     |> board.get_piece()
     |> result.replace_error(NoPieceAtStart),
   )
+
   use <- bool.guard(
     game.active_color != piece.color,
     return: Error(CannotMoveOpponentPiece),
@@ -185,12 +190,22 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     || dict.size(white_squares) == 0
     || opponent_has_pieces_left
 
-  // `active_color` stays the same when game ends since no more moves can happen
-  let active_color = case is_over {
-    True -> game.active_color
-    False -> board.switch_color(game.active_color)
+  let state = case is_over {
+    True -> {
+      Win(game.active_color)
+    }
+    False -> {
+      Ongoing
+    }
   }
-  Game(board:, active_color:, black_squares:, white_squares:, is_over:)
+
+  Game(
+    state:,
+    board:,
+    active_color: board.switch_color(game.active_color),
+    black_squares:,
+    white_squares:,
+  )
   |> Ok
 }
 

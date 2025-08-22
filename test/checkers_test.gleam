@@ -59,26 +59,26 @@ pub fn no_piece_at_start_test() {
 pub fn game_over_all_captured_test() {
   let assert Ok(game) = game.from_fen("B:W18:B14")
   let assert Ok(game) = game.move(game, "c5e3")
-  assert game.is_over && game.active_color == board.Black
+  assert game.state == game.Win(board.Black)
 }
 
 pub fn game_over_no_legal_moves_test() {
   let assert Ok(game) = game.from_fen("B:B10,13,14,23,24,28:W17,32")
   let assert Ok(game) = game.move(game, "g3f2")
-  assert game.is_over && game.active_color == board.Black
+  assert game.state == game.Win(board.Black)
 }
 
 /// The most recent fen grammar spec doesn't support positions with no pieces for one of the players
 /// which is why we don't test that game over case
 pub fn game_over_on_fen_load_test() {
   let assert Ok(game) = game.from_fen("W:B10,13,14,23,27,28:W17,32")
-  assert game.is_over && game.active_color == board.Black
+  assert game.state == game.Win(board.Black)
 }
 
 pub fn move_after_game_over_test() {
   let assert Ok(game) = game.from_fen("B:W18:B14")
   let assert Ok(game) = game.move(game, "c5e3")
-  assert game.is_over && game.active_color == board.Black
+  assert game.state == game.Win(board.Black)
   let assert Error(game.MoveAfterGameOver) = game.move(game, "e3f2")
 }
 
