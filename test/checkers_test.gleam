@@ -53,8 +53,7 @@ pub fn raw_move_parsing_test() {
 
 pub fn no_piece_at_start_test() {
   let assert Ok(game) = game.from_fen("B:W18:B14")
-  let assert Ok(raw_move) = raw_move.parse("b8a7")
-  let assert Error(game.NoPieceAtStart) = game.from_raw(game, raw_move)
+  let assert Error(game.NoPieceAtStart) = game.move(game, "b8a7")
 }
 
 pub fn game_over_all_captured_test() {

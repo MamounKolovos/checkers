@@ -4,7 +4,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
-import raw_move.{type RawMove}
+import raw_move
 
 pub type Error {
   MoveAfterGameOver
@@ -15,16 +15,6 @@ pub type Error {
   NoMovesForPiece
   FenError(fen.Error)
   RawMoveError(raw_move.Error)
-}
-
-pub opaque type Move {
-  Simple(piece: board.Piece, from: board.BoardIndex, to: board.BoardIndex)
-  Capture(
-    piece: board.Piece,
-    from: board.BoardIndex,
-    to: board.BoardIndex,
-    captured: List(board.BoardIndex),
-  )
 }
 
 pub type Game {
@@ -88,64 +78,86 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
 pub fn move(game: Game, request: String) -> Result(Game, Error) {
   use <- bool.guard(game.is_over, return: Error(MoveAfterGameOver))
 
-  use raw_move <- result.try(
-    raw_move.parse(request) |> result.map_error(RawMoveError),
+  use #(from, middle, to) <- result.try(
+    raw_move.parse(request)
+    |> result.map_error(RawMoveError)
+    |> result.map(raw_move.parts),
   )
-  use move <- result.try(from_raw(game, raw_move))
 
-  let #(board, black_squares, white_squares) = case move {
-    Simple(piece:, from:, to:) -> {
-      let board =
-        game.board
-        |> board.set(at: from, to: board.Empty)
-        |> board.set(at: to, to: board.Occupied(piece))
+  use piece <- result.try(
+    board.get(game.board, at: from)
+    |> board.get_piece()
+    |> result.replace_error(NoPieceAtStart),
+  )
+  use <- bool.guard(
+    game.active_color != piece.color,
+    return: Error(CannotMoveOpponentPiece),
+  )
 
-      case game.active_color {
-        Black -> #(
-          board,
-          game.black_squares
-            |> dict.delete(delete: from)
-            |> dict.insert(for: to, insert: piece),
-          game.white_squares,
+  let capture_builders = generate_capture_builders(game.board, from, piece)
+  let simple_builders = generate_simple_builders(game.board, from, piece)
+
+  use #(piece, from, to, captured) <- result.try(
+    case capture_builders, simple_builders {
+      //no moves available
+      [], [] -> Error(NoMovesForPiece)
+      // Player is allowed to do a simple move since no captures are possible
+      [], simple_builders -> {
+        use SimpleBuilder(piece:, from:, to:) <- result.map(
+          simple_builders
+          |> list.find(fn(builder) { builder.from == from && builder.to == to })
+          |> result.replace_error(InvalidSimpleMove),
         )
-        White -> #(
-          board,
-          game.black_squares,
-          game.white_squares
-            |> dict.delete(delete: from)
-            |> dict.insert(for: to, insert: piece),
-        )
+        #(piece, from, to, [])
       }
+      // Player must do a capture move when one is available
+      capture_builders, _ -> {
+        use CaptureBuilder(piece:, from:, middle: _, to:, captured:) <- result.map(
+          capture_builders
+          |> list.find(fn(builder) {
+            builder.from == from && builder.middle == middle && builder.to == to
+          })
+          |> result.replace_error(InvalidCaptureMove),
+        )
+        #(piece, from, to, captured)
+      }
+    },
+  )
+
+  // Promotion
+  let #(row, _) = board.index_to_row_col(to)
+  let piece = case piece, row {
+    board.Man(Black as color), 7 | board.Man(White as color), 0 ->
+      board.King(color)
+    piece, _ -> piece
+  }
+
+  // Update board
+  let board =
+    game.board
+    |> board.set(at: from, to: board.Empty)
+    |> board.set(at: to, to: board.Occupied(piece))
+    |> list.fold(captured, from: _, with: fn(acc, square_index) {
+      board.set(acc, at: square_index, to: board.Empty)
+    })
+
+  // Update square dictionaries
+  let #(black_squares, white_squares) = case game.active_color {
+    Black -> {
+      #(
+        game.black_squares
+          |> dict.delete(delete: from)
+          |> dict.insert(for: to, insert: piece),
+        dict.drop(game.white_squares, drop: captured),
+      )
     }
-    Capture(piece:, from:, to:, captured:) -> {
-      let board =
-        game.board
-        |> board.set(at: from, to: board.Empty)
-        |> board.set(at: to, to: board.Occupied(piece))
-        |> list.fold(captured, from: _, with: fn(acc, square_index) {
-          board.set(acc, at: square_index, to: board.Empty)
-        })
-
-      case game.active_color {
-        Black -> {
-          #(
-            board,
-            game.black_squares
-              |> dict.delete(delete: from)
-              |> dict.insert(for: to, insert: piece),
-            dict.drop(game.white_squares, drop: captured),
-          )
-        }
-        White -> {
-          #(
-            board,
-            dict.drop(game.black_squares, drop: captured),
-            game.white_squares
-              |> dict.delete(delete: from)
-              |> dict.insert(for: to, insert: piece),
-          )
-        }
-      }
+    White -> {
+      #(
+        dict.drop(game.black_squares, drop: captured),
+        game.white_squares
+          |> dict.delete(delete: from)
+          |> dict.insert(for: to, insert: piece),
+      )
     }
   }
 
@@ -172,65 +184,14 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     dict.size(black_squares) == 0
     || dict.size(white_squares) == 0
     || opponent_has_pieces_left
+
+  // `active_color` stays the same when game ends since no more moves can happen
   let active_color = case is_over {
     True -> game.active_color
     False -> board.switch_color(game.active_color)
   }
   Game(board:, active_color:, black_squares:, white_squares:, is_over:)
   |> Ok
-}
-
-pub fn from_raw(game: Game, raw_move: RawMove) -> Result(Move, Error) {
-  let #(from, middle, to) = raw_move.parts(raw_move)
-  use piece <- result.try(
-    board.get(game.board, at: from)
-    |> board.get_piece()
-    |> result.replace_error(NoPieceAtStart),
-  )
-  use <- bool.guard(
-    game.active_color != piece.color,
-    return: Error(CannotMoveOpponentPiece),
-  )
-
-  let capture_builders = generate_capture_builders(game.board, from, piece)
-  let simple_builders = generate_simple_builders(game.board, from, piece)
-
-  case capture_builders, simple_builders {
-    //no moves available
-    [], [] -> Error(NoMovesForPiece)
-    // Player is allowed to do a simple move since no captures are possible
-    [], simple_builders -> {
-      use SimpleBuilder(piece:, from:, to:) <- result.map(
-        simple_builders
-        |> list.find(fn(builder) { builder.from == from && builder.to == to })
-        |> result.replace_error(InvalidSimpleMove),
-      )
-      // Promotion
-      let #(row, _) = board.index_to_row_col(to)
-      case piece, row {
-        board.Man(Black as color), 7 | board.Man(White as color), 0 ->
-          Simple(piece: board.King(color), from:, to:)
-        piece, _ -> Simple(piece:, from:, to:)
-      }
-    }
-    // Player must do a capture move when one is available
-    capture_builders, _ -> {
-      use CaptureBuilder(piece:, from:, middle: _, to:, captured:) <- result.map(
-        capture_builders
-        |> list.find(fn(builder) {
-          builder.from == from && builder.middle == middle && builder.to == to
-        })
-        |> result.replace_error(InvalidCaptureMove),
-      )
-      // Promotion
-      let #(row, _) = board.index_to_row_col(to)
-      case piece, row {
-        board.Man(Black as color), 7 | board.Man(White as color), 0 ->
-          Capture(piece: board.King(color), from:, to:, captured:)
-        piece, _ -> Capture(piece:, from:, to:, captured:)
-      }
-    }
-  }
 }
 
 type SimpleBuilder {
