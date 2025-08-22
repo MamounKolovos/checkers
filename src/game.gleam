@@ -1,4 +1,4 @@
-import board.{type Board, type Color, Black, White}
+import board.{type Board}
 import fen
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -20,7 +20,7 @@ pub type Error {
 pub type Game {
   Game(
     board: Board,
-    active_color: Color,
+    active_color: board.Color,
     black_squares: Dict(board.BoardIndex, board.Piece),
     white_squares: Dict(board.BoardIndex, board.Piece),
     is_over: Bool,
@@ -46,8 +46,8 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
 
       let is_over =
         case active_color {
-          Black -> black_squares
-          White -> white_squares
+          board.Black -> black_squares
+          board.White -> white_squares
         }
         // keep pieces with legal moves
         |> dict.filter(keeping: fn(index, piece) {
@@ -127,7 +127,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
   // Promotion
   let #(row, _) = board.index_to_row_col(to)
   let piece = case piece, row {
-    board.Man(Black as color), 7 | board.Man(White as color), 0 ->
+    board.Man(board.Black as color), 7 | board.Man(board.White as color), 0 ->
       board.King(color)
     piece, _ -> piece
   }
@@ -143,7 +143,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
 
   // Update square dictionaries
   let #(black_squares, white_squares) = case game.active_color {
-    Black -> {
+    board.Black -> {
       #(
         game.black_squares
           |> dict.delete(delete: from)
@@ -151,7 +151,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
         dict.drop(game.white_squares, drop: captured),
       )
     }
-    White -> {
+    board.White -> {
       #(
         dict.drop(game.black_squares, drop: captured),
         game.white_squares
@@ -165,8 +165,8 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     // get opposite colored squares
     // if black moved, need to see if white can make any moves
     case game.active_color {
-      Black -> white_squares
-      White -> black_squares
+      board.Black -> white_squares
+      board.White -> black_squares
     }
     // keep pieces with legal moves
     |> dict.filter(keeping: fn(index, piece) {
