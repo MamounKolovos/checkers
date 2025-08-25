@@ -16,8 +16,8 @@ pub type Error {
 pub type ParseResult {
   ParseResult(
     active_color: board.Color,
-    white_squares: Dict(board.BoardIndex, board.Piece),
-    black_squares: Dict(board.BoardIndex, board.Piece),
+    white_mappings: Dict(board.BoardIndex, board.Piece),
+    black_mappings: Dict(board.BoardIndex, board.Piece),
   )
 }
 
@@ -42,12 +42,12 @@ pub fn parse(fen: String) -> Result(ParseResult, Error) {
   use squares2 <- result.try(parse_pieces_until_eos(fen, color2, indices))
 
   // ensure the first and second colors are unique from each other
-  use #(white_squares, black_squares) <- result.try(case color1, color2 {
+  use #(white_mappings, black_mappings) <- result.try(case color1, color2 {
     board.White, board.Black -> #(squares1, squares2) |> Ok
     board.Black, board.White -> #(squares2, squares1) |> Ok
     _, _ -> Error(SegmentMismatch)
   })
-  ParseResult(active_color:, white_squares:, black_squares:)
+  ParseResult(active_color:, white_mappings:, black_mappings:)
   |> Ok
 }
 

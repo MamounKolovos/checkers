@@ -32,7 +32,7 @@ const plies_to_draw = 40
 
 //TODO: make opaque
 pub type Data {
-  Data(squares: Dict(board.BoardIndex, board.Piece), plies_until_draw: Int)
+  Data(mappings: Dict(board.BoardIndex, board.Piece), plies_until_draw: Int)
 }
 
 //TODO: make opaque
@@ -52,17 +52,17 @@ pub fn create() -> Game {
 
 pub fn from_fen(fen: String) -> Result(Game, Error) {
   case fen.parse(fen) {
-    Ok(fen.ParseResult(active_color:, white_squares:, black_squares:)) -> {
+    Ok(fen.ParseResult(active_color:, white_mappings:, black_mappings:)) -> {
       let board =
-        dict.merge(white_squares, black_squares)
+        dict.merge(white_mappings, black_mappings)
         |> dict.fold(from: board.empty(), with: fn(board, index, piece) {
           board.set(board, at: index, to: board.Occupied(piece))
         })
 
       let has_pieces_left =
         case active_color {
-          board.Black -> black_squares
-          board.White -> white_squares
+          board.Black -> black_mappings
+          board.White -> white_mappings
         }
         // keep pieces with legal moves
         |> dict.filter(keeping: fn(index, piece) {
@@ -86,11 +86,11 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
         board:,
         active_color:,
         black_data: Data(
-          squares: black_squares,
+          mappings: black_mappings,
           plies_until_draw: plies_to_draw,
         ),
         white_data: Data(
-          squares: white_squares,
+          mappings: white_mappings,
           plies_until_draw: plies_to_draw,
         ),
       )
@@ -177,8 +177,8 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
 
     // move piece from origin to destination,
     // updating its position in terms of the mappings
-    let player_squares =
-      player_data.squares
+    let player_mappings =
+      player_data.mappings
       |> dict.delete(delete: from)
       |> dict.insert(for: to, insert: piece)
 
@@ -191,14 +191,14 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     }
 
     // remove captured pieces from opponent's mappings
-    let opponent_squares = dict.drop(opponent_data.squares, drop: captured)
+    let opponent_mappings = dict.drop(opponent_data.mappings, drop: captured)
 
     let player_data =
-      Data(squares: player_squares, plies_until_draw: player_plies_until_draw)
+      Data(mappings: player_mappings, plies_until_draw: player_plies_until_draw)
     // plies are half-moves, so they can only change for the active player
     let opponent_data =
       Data(
-        squares: opponent_squares,
+        mappings: opponent_mappings,
         plies_until_draw: opponent_data.plies_until_draw,
       )
 
@@ -212,7 +212,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
   }
 
   let opponent_movable_pieces =
-    dict.filter(opponent_data.squares, keeping: fn(index, piece) {
+    dict.filter(opponent_data.mappings, keeping: fn(index, piece) {
       let capture_builders = generate_capture_builders(board, index, piece)
       let simple_builders = generate_simple_builders(board, index, piece)
       case capture_builders, simple_builders {
@@ -223,7 +223,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
 
   let is_win =
     // captured all of opponent's pieces
-    dict.is_empty(opponent_data.squares)
+    dict.is_empty(opponent_data.mappings)
     // opponent has no more movable pieces
     || dict.is_empty(opponent_movable_pieces)
 
