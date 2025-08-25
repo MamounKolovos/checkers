@@ -2,6 +2,7 @@ import board
 import fen
 import game
 import gleam/dict
+import gleam/list
 import gleam/result
 import gleeunit
 import raw_move
@@ -68,6 +69,68 @@ pub fn game_over_no_legal_moves_test() {
   assert game.state == game.Win(board.Black)
 }
 
+/// When a player reaches 40 plies (half-moves) without capturing or moving a man,
+/// a draw must occur
+pub fn game_draw_from_max_plies_test() {
+  let #(
+    black_king_forward,
+    white_king_forward,
+    black_king_backward,
+    white_king_backward,
+  ) = #("d6c5", "g1f2", "c5d6", "f2g1")
+  // start with kings since moving a man resets the draw counter
+  let assert Ok(game) = game.from_fen("B:BK10:WK32")
+  let game =
+    // Black plies: 0-38
+    list.repeat(item: 0, times: 19)
+    |> list.fold(from: game, with: fn(game, _) {
+      let assert Ok(game) = game.move(game, black_king_forward)
+      let assert Ok(game) = game.move(game, white_king_forward)
+      let assert Ok(game) = game.move(game, black_king_backward)
+      let assert Ok(game) = game.move(game, white_king_backward)
+      game
+    })
+  // Black plies: 38-39
+  let assert Ok(game) = game.move(game, black_king_forward)
+  let assert Ok(game) = game.move(game, white_king_forward)
+  // Black plies: 39-40
+  let assert Ok(game) = game.move(game, black_king_backward)
+  assert game.state == game.Draw
+}
+
+/// Resets white ply counter to ensure that draw is still reached - 
+/// if black reaches 40
+/// Basically ensures that plies are updated truly on a per-player basis
+pub fn game_draw_from_max_plies_test1() {
+  let #(
+    black_king_forward,
+    white_man_forward,
+    white_king_forward,
+    black_king_backward,
+    white_king_backward,
+  ) = #("d6c5", "c3b4", "g1f2", "c5d6", "f2g1")
+
+  let assert Ok(game) = game.from_fen("B:BK10:W14,K32")
+  let game =
+    // Black and white plies: 0-38
+    list.repeat(item: 0, times: 10)
+    |> list.fold(from: game, with: fn(game, _) {
+      let assert Ok(game) = game.move(game, black_king_forward)
+      let assert Ok(game) = game.move(game, white_king_forward)
+      let assert Ok(game) = game.move(game, black_king_backward)
+      let assert Ok(game) = game.move(game, white_king_backward)
+      game
+    })
+  // Black plies: 38-39
+  let assert Ok(game) = game.move(game, black_king_forward)
+  // *RESET WHITE PLIES* by moving man
+  // White plies: 38-0
+  let assert Ok(game) = game.move(game, white_man_forward)
+  // Black plies: 39-40
+  let assert Ok(game) = game.move(game, black_king_backward)
+  assert game.state == game.Draw
+}
+
 /// The most recent fen grammar spec doesn't support positions with no pieces for one of the players
 /// which is why we don't test that game over case
 pub fn game_over_on_fen_load_test() {
@@ -98,9 +161,9 @@ pub fn simple_move_test() {
 
 pub fn capture_move_test() {
   let assert Ok(game) = game.from_fen("B:W23,28:B18")
-  assert dict.size(game.white_squares) == 2
+  assert dict.size(game.white_data.squares) == 2
   let assert Ok(game) = game.move(game, "d4f2")
-  assert dict.size(game.white_squares) == 1
+  assert dict.size(game.white_data.squares) == 1
 }
 
 pub fn capture_requires_empty_destination_test() {
@@ -110,9 +173,9 @@ pub fn capture_requires_empty_destination_test() {
 
 pub fn multi_capture_move_test() {
   let assert Ok(game) = game.from_fen("B:W18,27,28:B14")
-  assert dict.size(game.white_squares) == 3
+  assert dict.size(game.white_data.squares) == 3
   let assert Ok(game) = game.move(game, "c5e3g1")
-  assert dict.size(game.white_squares) == 1
+  assert dict.size(game.white_data.squares) == 1
 }
 
 pub fn multi_capture_move_1_test() {

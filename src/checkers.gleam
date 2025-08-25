@@ -29,7 +29,10 @@ fn loop(game: Game) -> Result(Nil, error.Error) {
               io.println(board.color_to_string(winner) <> " Wins!")
               Ok(Nil)
             }
-            game.Draw -> todo
+            game.Draw -> {
+              io.println("Draw!")
+              Ok(Nil)
+            }
             game.Ongoing -> {
               board.print(game.board)
               loop(game)

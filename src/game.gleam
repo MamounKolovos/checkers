@@ -17,16 +17,25 @@ pub type Error {
   RawMoveError(raw_move.Error)
 }
 
+//TODO: make opaque
 pub type Game {
   Game(
     state: GameState,
     board: Board,
     active_color: board.Color,
-    black_squares: Dict(board.BoardIndex, board.Piece),
-    white_squares: Dict(board.BoardIndex, board.Piece),
+    black_data: Data,
+    white_data: Data,
   )
 }
 
+const plies_to_draw = 40
+
+//TODO: make opaque
+pub type Data {
+  Data(squares: Dict(board.BoardIndex, board.Piece), plies_until_draw: Int)
+}
+
+//TODO: make opaque
 pub type GameState {
   Win(board.Color)
   Draw
@@ -72,7 +81,19 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
         False -> Ongoing
       }
 
-      Game(state:, board:, active_color:, black_squares:, white_squares:)
+      Game(
+        state:,
+        board:,
+        active_color:,
+        black_data: Data(
+          squares: black_squares,
+          plies_until_draw: plies_to_draw,
+        ),
+        white_data: Data(
+          squares: white_squares,
+          plies_until_draw: plies_to_draw,
+        ),
+      )
       |> Ok
     }
     Error(e) -> Error(FenError(e))
@@ -146,35 +167,52 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
       board.set(acc, at: square_index, to: board.Empty)
     })
 
-  // Update square dictionaries
-  let #(black_squares, white_squares) = case game.active_color {
-    board.Black -> {
-      #(
-        game.black_squares
-          |> dict.delete(delete: from)
-          |> dict.insert(for: to, insert: piece),
-        dict.drop(game.white_squares, drop: captured),
-      )
+  let #(player_data, opponent_data) = {
+    // use a player-opponent model instead of a black-white model
+    // it allows us to avoid duplicating the logic for both colors
+    let #(player_data, opponent_data) = case game.active_color {
+      board.Black -> #(game.black_data, game.white_data)
+      board.White -> #(game.white_data, game.black_data)
     }
-    board.White -> {
-      #(
-        dict.drop(game.black_squares, drop: captured),
-        game.white_squares
-          |> dict.delete(delete: from)
-          |> dict.insert(for: to, insert: piece),
-      )
+
+    // move piece from origin to destination,
+    // updating its position in terms of the mappings
+    let player_squares =
+      player_data.squares
+      |> dict.delete(delete: from)
+      |> dict.insert(for: to, insert: piece)
+
+    // A draw requires a player to complete 40 plies without making a capture
+    // or moving a man, reset the counter otherwise.
+    let player_plies_until_draw = case captured, piece {
+      [], board.King(color) if color == game.active_color ->
+        player_data.plies_until_draw - 1
+      _, _ -> plies_to_draw
     }
+
+    // remove captured pieces from opponent's mappings
+    let opponent_squares = dict.drop(opponent_data.squares, drop: captured)
+
+    let player_data =
+      Data(squares: player_squares, plies_until_draw: player_plies_until_draw)
+    // plies are half-moves, so they can only change for the active player
+    let opponent_data =
+      Data(
+        squares: opponent_squares,
+        plies_until_draw: opponent_data.plies_until_draw,
+      )
+
+    #(player_data, opponent_data)
   }
 
-  let opponent_has_pieces_left =
-    // get opposite colored squares
-    // if black moved, need to see if white can make any moves
-    case game.active_color {
-      board.Black -> white_squares
-      board.White -> black_squares
-    }
-    // keep pieces with legal moves
-    |> dict.filter(keeping: fn(index, piece) {
+  // convert back to black-white model after transformations are done
+  let #(black_data, white_data) = case game.active_color {
+    board.Black -> #(player_data, opponent_data)
+    board.White -> #(opponent_data, player_data)
+  }
+
+  let opponent_movable_pieces =
+    dict.filter(opponent_data.squares, keeping: fn(index, piece) {
       let capture_builders = generate_capture_builders(board, index, piece)
       let simple_builders = generate_simple_builders(board, index, piece)
       case capture_builders, simple_builders {
@@ -182,29 +220,35 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
         _, _ -> True
       }
     })
-    // game over if none remain
-    |> dict.is_empty()
 
-  let is_over =
-    dict.size(black_squares) == 0
-    || dict.size(white_squares) == 0
-    || opponent_has_pieces_left
+  let is_win =
+    // captured all of opponent's pieces
+    dict.is_empty(opponent_data.squares)
+    // opponent has no more movable pieces
+    || dict.is_empty(opponent_movable_pieces)
 
-  let state = case is_over {
-    True -> {
-      Win(game.active_color)
-    }
-    False -> {
-      Ongoing
-    }
+  let is_draw = case player_data.plies_until_draw {
+    // player went 40 plies without capturing or moving a man
+    plies if plies == 0 -> True
+    // not a draw yet
+    plies if plies > 0 -> False
+    // negative; should never happen
+    _ -> panic
+  }
+
+  let state = case is_win, is_draw {
+    // wins take precedence over draws in the rare case both are true
+    True, _ -> Win(game.active_color)
+    False, True -> Draw
+    False, False -> Ongoing
   }
 
   Game(
     state:,
     board:,
     active_color: board.switch_color(game.active_color),
-    black_squares:,
-    white_squares:,
+    black_data:,
+    white_data:,
   )
   |> Ok
 }
