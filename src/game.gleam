@@ -59,24 +59,12 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
           board.set(board, at: index, to: board.Occupied(piece))
         })
 
-      let has_pieces_left =
-        case active_color {
-          board.Black -> black_mappings
-          board.White -> white_mappings
-        }
-        // keep pieces with legal moves
-        |> dict.filter(keeping: fn(index, piece) {
-          let capture_builders = generate_capture_builders(board, index, piece)
-          let simple_builders = generate_simple_builders(board, index, piece)
-          case capture_builders, simple_builders {
-            [], [] -> False
-            _, _ -> True
-          }
-        })
-        // game over if none remain
-        |> dict.is_empty()
+      let player_mappings = case active_color {
+        board.Black -> black_mappings
+        board.White -> white_mappings
+      }
 
-      let state = case has_pieces_left {
+      let state = case is_player_defeated(board, player_mappings) {
         True -> Win(board.switch_color(active_color))
         False -> Ongoing
       }
@@ -98,6 +86,27 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
     }
     Error(e) -> Error(FenError(e))
   }
+}
+
+/// Determines whether a player lost based on their `mappings`
+fn is_player_defeated(
+  board: Board,
+  mappings: Dict(board.BoardIndex, board.Piece),
+) -> Bool {
+  let movable_pieces =
+    dict.filter(mappings, keeping: fn(index, piece) {
+      let capture_builders = generate_capture_builders(board, index, piece)
+      let simple_builders = generate_simple_builders(board, index, piece)
+      case capture_builders, simple_builders {
+        [], [] -> False
+        _, _ -> True
+      }
+    })
+
+  // all player's pieces are captured
+  dict.is_empty(mappings)
+  // player has no pieces left with legal moves
+  || dict.is_empty(movable_pieces)
 }
 
 pub fn move(game: Game, request: String) -> Result(Game, Error) {
@@ -211,22 +220,6 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     board.White -> #(opponent_data, player_data)
   }
 
-  let opponent_movable_pieces =
-    dict.filter(opponent_data.mappings, keeping: fn(index, piece) {
-      let capture_builders = generate_capture_builders(board, index, piece)
-      let simple_builders = generate_simple_builders(board, index, piece)
-      case capture_builders, simple_builders {
-        [], [] -> False
-        _, _ -> True
-      }
-    })
-
-  let is_win =
-    // captured all of opponent's pieces
-    dict.is_empty(opponent_data.mappings)
-    // opponent has no more movable pieces
-    || dict.is_empty(opponent_movable_pieces)
-
   let is_draw = case player_data.plies_until_draw {
     // player went 40 plies without capturing or moving a man
     plies if plies == 0 -> True
@@ -236,7 +229,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     _ -> panic
   }
 
-  let state = case is_win, is_draw {
+  let state = case is_player_defeated(board, opponent_data.mappings), is_draw {
     // wins take precedence over draws in the rare case both are true
     True, _ -> Win(game.active_color)
     False, True -> Draw
