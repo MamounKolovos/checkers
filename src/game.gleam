@@ -1,21 +1,10 @@
 import board.{type Board}
+import error.{type Error}
 import fen
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
-import raw_move
-
-pub type Error {
-  MoveAfterGameOver
-  CannotMoveOpponentPiece
-  NoPieceAtStart
-  InvalidSimpleMove
-  InvalidCaptureMove
-  NoMovesForPiece
-  FenError(fen.Error)
-  RawMoveError(raw_move.Error)
-}
 
 //TODO: make opaque
 pub type Game {
@@ -84,7 +73,7 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
       )
       |> Ok
     }
-    Error(e) -> Error(FenError(e))
+    Error(e) -> Error(e)
   }
 }
 
@@ -109,24 +98,16 @@ fn is_player_defeated(
   || dict.is_empty(movable_pieces)
 }
 
-pub fn move(game: Game, request: String) -> Result(Game, Error) {
-  use <- bool.guard(game.state != Ongoing, return: Error(MoveAfterGameOver))
-
-  use #(from, middle, to) <- result.try(
-    raw_move.parse(request)
-    |> result.map_error(RawMoveError)
-    |> result.map(raw_move.parts),
-  )
-
-  use piece <- result.try(
-    board.get(game.board, at: from)
-    |> board.get_piece()
-    |> result.replace_error(NoPieceAtStart),
-  )
-
+pub fn move(
+  game: Game,
+  piece: board.Piece,
+  from: board.BoardIndex,
+  middle: List(board.BoardIndex),
+  to: board.BoardIndex,
+) -> Result(Game, Error) {
   use <- bool.guard(
-    game.active_color != piece.color,
-    return: Error(CannotMoveOpponentPiece),
+    game.state != Ongoing,
+    return: Error(error.ActionAfterGameOver),
   )
 
   let capture_builders = generate_capture_builders(game.board, from, piece)
@@ -135,13 +116,13 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
   use #(piece, from, to, captured) <- result.try(
     case capture_builders, simple_builders {
       //no moves available
-      [], [] -> Error(NoMovesForPiece)
+      [], [] -> Error(error.NoMovesForPiece)
       // Player is allowed to do a simple move since no captures are possible
       [], simple_builders -> {
         use SimpleBuilder(piece:, from:, to:) <- result.map(
           simple_builders
           |> list.find(fn(builder) { builder.from == from && builder.to == to })
-          |> result.replace_error(InvalidSimpleMove),
+          |> result.replace_error(error.InvalidSimpleMove),
         )
         #(piece, from, to, [])
       }
@@ -152,7 +133,7 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
           |> list.find(fn(builder) {
             builder.from == from && builder.middle == middle && builder.to == to
           })
-          |> result.replace_error(InvalidCaptureMove),
+          |> result.replace_error(error.InvalidCaptureMove),
         )
         #(piece, from, to, captured)
       }
@@ -244,6 +225,41 @@ pub fn move(game: Game, request: String) -> Result(Game, Error) {
     white_data:,
   )
   |> Ok
+}
+
+//TODO: change to `PieceLegalMoves` -> #(piece, List(Move))
+pub type LegalMove {
+  LegalMove(
+    piece: board.Piece,
+    from: board.BoardIndex,
+    middle: List(board.BoardIndex),
+    to: board.BoardIndex,
+    captured: List(board.BoardIndex),
+  )
+}
+
+pub fn generate_legal_moves(
+  board: Board,
+  piece: board.Piece,
+  from: board.BoardIndex,
+) -> List(LegalMove) {
+  let capture_builders = generate_capture_builders(board, from, piece)
+  let simple_builders = generate_simple_builders(board, from, piece)
+  case capture_builders, simple_builders {
+    [], [] -> []
+    [], simple_builders -> {
+      list.map(simple_builders, fn(builder) {
+        let SimpleBuilder(piece:, from:, to:) = builder
+        LegalMove(piece:, from:, middle: [], to:, captured: [])
+      })
+    }
+    capture_builders, _ -> {
+      list.map(capture_builders, fn(builder) {
+        let CaptureBuilder(piece:, from:, middle:, to:, captured:) = builder
+        LegalMove(piece:, from:, middle:, to:, captured:)
+      })
+    }
+  }
 }
 
 type SimpleBuilder {

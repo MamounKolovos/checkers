@@ -1,57 +1,58 @@
 import board
+import error.{type Error}
 import gleam/list
 import gleam/result
 
-pub type Error {
-  InvalidFile
-  InvalidRank
-  EmptyPath
-  MissingDestination
-}
+// pub type Error {
+//   InvalidFile
+//   InvalidRank
+//   EmptyPath
+//   MissingDestination
+// }
 
-pub opaque type RawMove {
-  RawMove(
+// Important to remember that `middle` being present guarantees its a capture,
+// but it *not* being present doesn't guarantee its *not* a capture
+// cannot classify simple/capture by `middle`'s state 
+pub type Action {
+  Move(
     from: board.BoardIndex,
     middle: List(board.BoardIndex),
     to: board.BoardIndex,
   )
+  Select(from: board.BoardIndex)
 }
 
-pub fn parts(
-  raw_move: RawMove,
-) -> #(board.BoardIndex, List(board.BoardIndex), board.BoardIndex) {
-  #(raw_move.from, raw_move.middle, raw_move.to)
-}
-
-pub fn parse(request: String) -> Result(RawMove, Error) {
+pub fn parse(request: String) -> Result(Action, Error) {
   parse_path(request)
 }
 
-fn parse_path(request: String) -> Result(RawMove, Error) {
+fn parse_path(request: String) -> Result(Action, Error) {
   parse_path_loop(request, [])
 }
 
 fn parse_path_loop(
   request: String,
   positions: List(board.BoardIndex),
-) -> Result(RawMove, Error) {
+) -> Result(Action, Error) {
   case request {
     // base case - we've finished iterating, and now all everything is within
     // the `positions` variable
     "" -> {
       case positions {
-        [] -> Error(EmptyPath)
+        [] -> Error(error.EmptyPath)
+        [from] -> Select(from:) |> Ok
 
         // `to` represents the final destination of the path. It'll be first,
         // because we're prepending to the list every time
-        [to, ..rest] ->
-          case list.reverse(rest) {
-            [] -> Error(MissingDestination)
+        [to, ..rest] -> {
+          // We use the new, reversed `middle` instead of `rest`, because since we
+          // prepended to the list on creation, it was backwards before.
 
-            // We use the new, reversed `middle` instead of `rest`, because since we
-            // prepended to the list on creation, it was backwards before.
-            [from, ..middle] -> RawMove(from:, middle:, to:) |> Ok
-          }
+          // We must assert on the reverse since it doesn't know we already 
+          // handled the empty list case above
+          let assert [from, ..middle] = list.reverse(rest)
+          Move(from:, middle:, to:) |> Ok
+        }
       }
     }
 
@@ -83,7 +84,7 @@ fn parse_file(request: String) -> Result(#(Int, String), Error) {
     "f" <> rest -> Ok(#(6, rest))
     "g" <> rest -> Ok(#(7, rest))
     "h" <> rest -> Ok(#(8, rest))
-    _ -> Error(InvalidFile)
+    _ -> Error(error.InvalidFile)
   }
 }
 
@@ -97,6 +98,6 @@ fn parse_rank(request: String) -> Result(#(Int, String), Error) {
     "3" <> rest -> Ok(#(6, rest))
     "2" <> rest -> Ok(#(7, rest))
     "1" <> rest -> Ok(#(8, rest))
-    _ -> Error(InvalidRank)
+    _ -> Error(error.InvalidRank)
   }
 }

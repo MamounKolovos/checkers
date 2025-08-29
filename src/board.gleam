@@ -111,7 +111,11 @@ pub fn set(in board: Board, at index: BoardIndex, to square: Square) -> Board {
   Board(squares)
 }
 
-fn row_to_string(row: Int, board: Board) -> String {
+fn row_to_string(
+  row: Int,
+  board: Board,
+  formatter: fn(BoardIndex, Square) -> String,
+) -> String {
   let columns =
     list.range(0, 7)
     |> list.map(fn(col) {
@@ -119,7 +123,7 @@ fn row_to_string(row: Int, board: Board) -> String {
         True -> {
           let assert Ok(index) = row_col_to_index(row, col)
           let square = get(board, at: index)
-          square_to_str(square)
+          formatter(index, square)
         }
         False -> " "
       }
@@ -129,13 +133,13 @@ fn row_to_string(row: Int, board: Board) -> String {
   int.to_string(8 - row) <> " | " <> columns <> " |"
 }
 
-fn to_string(board: Board) {
+pub fn format(board: Board, formatter fun: fn(BoardIndex, Square) -> String) {
   let row_divider = "  ---------------------------------"
   let column_display = "    A   B   C   D   E   F   G   H"
 
   let rows =
     list.range(0, 7)
-    |> list.map(row_to_string(_, board))
+    |> list.map(row_to_string(_, board, fun))
     |> list.intersperse(row_divider)
     |> string.join(with: "\n")
 
@@ -143,6 +147,21 @@ fn to_string(board: Board) {
   |> string.join(with: "\n")
 }
 
+pub fn to_string(board: Board) -> String {
+  format(board, formatter: fn(_, square) { square_to_str(square) })
+}
+
 pub fn print(board: Board) {
-  to_string(board) |> io.println()
+  board
+  |> to_string()
+  |> io.println()
+}
+
+pub fn highlight(board: Board, square_indexes: List(BoardIndex)) -> String {
+  format(board, formatter: fn(index, square) {
+    case list.contains(square_indexes, index) {
+      True -> square_to_str(square) |> ansi.bg_bright_green()
+      False -> square_to_str(square)
+    }
+  })
 }

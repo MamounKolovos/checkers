@@ -1,17 +1,11 @@
 import board
+import error.{type Error}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
-
-pub type Error {
-  SegmentMismatch
-  OutOfRange
-  DuplicateFound
-  UnexpectedChar(expected: String, got: String)
-}
 
 pub type ParseResult {
   ParseResult(
@@ -45,7 +39,7 @@ pub fn parse(fen: String) -> Result(ParseResult, Error) {
   use #(white_mappings, black_mappings) <- result.try(case color1, color2 {
     board.White, board.Black -> #(squares1, squares2) |> Ok
     board.Black, board.White -> #(squares2, squares1) |> Ok
-    _, _ -> Error(SegmentMismatch)
+    _, _ -> Error(error.SegmentMismatch)
   })
   ParseResult(active_color:, white_mappings:, black_mappings:)
   |> Ok
@@ -55,16 +49,17 @@ fn parse_color(fen: String) -> Result(#(board.Color, String), Error) {
   case string.pop_grapheme(fen) {
     Ok(#("B", rest)) -> #(board.Black, rest) |> Ok
     Ok(#("W", rest)) -> #(board.White, rest) |> Ok
-    Ok(#(first, _)) -> UnexpectedChar(expected: "B or W", got: first) |> Error
-    Error(_) -> UnexpectedChar(expected: "B or W", got: "") |> Error
+    Ok(#(first, _)) ->
+      error.UnexpectedChar(expected: "B or W", got: first) |> Error
+    Error(_) -> error.UnexpectedChar(expected: "B or W", got: "") |> Error
   }
 }
 
 fn parse_colon(fen: String) -> Result(String, Error) {
   case string.pop_grapheme(fen) {
     Ok(#(":", rest)) -> rest |> Ok
-    Ok(#(first, _)) -> UnexpectedChar(expected: ":", got: first) |> Error
-    Error(_) -> UnexpectedChar(expected: ":", got: "") |> Error
+    Ok(#(first, _)) -> error.UnexpectedChar(expected: ":", got: first) |> Error
+    Error(_) -> error.UnexpectedChar(expected: ":", got: "") |> Error
   }
 }
 
@@ -90,7 +85,7 @@ fn parse_pieces_until_colon_loop(
   use #(index, piece, fen) <- result.try(parse_full_piece(fen, color, False))
   use <- bool.guard(
     set.contains(indices, this: index),
-    return: Error(DuplicateFound),
+    return: Error(error.DuplicateFound),
   )
 
   case string.pop_grapheme(fen) {
@@ -110,8 +105,9 @@ fn parse_pieces_until_colon_loop(
       )
       |> Ok
     Ok(#(first, _)) ->
-      UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
-    Error(_) -> UnexpectedChar(expected: "1-32 or , or EOS", got: "") |> Error
+      error.UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
+    Error(_) ->
+      error.UnexpectedChar(expected: "1-32 or , or EOS", got: "") |> Error
   }
 }
 
@@ -132,7 +128,7 @@ fn parse_pieces_until_eos_loop(
   use #(index, piece, fen) <- result.try(parse_full_piece(fen, color, False))
   use <- bool.guard(
     set.contains(indices, this: index),
-    return: Error(DuplicateFound),
+    return: Error(error.DuplicateFound),
   )
 
   case string.pop_grapheme(fen) {
@@ -145,7 +141,7 @@ fn parse_pieces_until_eos_loop(
       )
     }
     Ok(#(first, _)) ->
-      UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
+      error.UnexpectedChar(expected: "1-32 or , or EOS", got: first) |> Error
     Error(_) ->
       dict.insert(squares, for: index, insert: piece)
       |> Ok
@@ -170,14 +166,14 @@ fn parse_full_piece(
                 True -> #(index, board.King(color), rest) |> Ok
                 False -> #(index, board.Man(color), rest) |> Ok
               }
-            Error(_) -> OutOfRange |> Error
+            Error(_) -> error.OutOfRange |> Error
           }
         }
 
-        first -> UnexpectedChar("K or 1-32", got: first) |> Error
+        first -> error.UnexpectedChar("K or 1-32", got: first) |> Error
       }
 
-    Error(_) -> UnexpectedChar("K or 1-32", got: "") |> Error
+    Error(_) -> error.UnexpectedChar("K or 1-32", got: "") |> Error
   }
 }
 
