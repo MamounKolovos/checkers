@@ -9,7 +9,7 @@ import gleam/dict
 import gleam/list
 import gleam/result
 import gleeunit
-import position.{type Position}
+import position
 
 pub fn main() -> Nil {
   gleeunit.main()
