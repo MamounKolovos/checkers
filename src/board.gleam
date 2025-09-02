@@ -36,7 +36,10 @@ pub fn index_to_row_col(index: BoardIndex) -> #(Int, Int) {
 }
 
 pub fn row_col_to_index(row: Int, col: Int) -> Result(BoardIndex, Nil) {
-  from_int({ row * 8 + col } / 2)
+  case row >= 0 && row < 8 && col >= 0 && col < 8 {
+    True -> from_int({ row * 8 + col } / 2)
+    False -> Error(Nil)
+  }
 }
 
 pub type Color {
