@@ -1,46 +1,40 @@
 import board
 import error.{type Error}
+import gleam/bool
 import gleam/list
 import gleam/result
 
-// pub type Error {
-//   InvalidFile
-//   InvalidRank
-//   EmptyPath
-//   MissingDestination
-// }
+type Selection =
+  board.BoardIndex
 
-// Important to remember that `middle` being present guarantees its a capture,
-// but it *not* being present doesn't guarantee its *not* a capture
-// cannot classify simple/capture by `middle`'s state 
-pub type Action {
-  Move(
-    from: board.BoardIndex,
-    middle: List(board.BoardIndex),
-    to: board.BoardIndex,
-  )
-  Select(from: board.BoardIndex)
+pub fn parse_selection(request: String) -> Result(Selection, Error) {
+  use <- bool.guard(request == "", return: Error(error.EmptyRequest))
+
+  use #(position, request) <- result.try(request |> parse_position())
+  case request {
+    "" -> position |> Ok
+    request -> error.UnexpectedTrailingRequest(got: request) |> Error
+  }
 }
 
-pub fn parse(request: String) -> Result(Action, Error) {
-  parse_path(request)
+type Move =
+  #(board.BoardIndex, List(board.BoardIndex), board.BoardIndex)
+
+pub fn parse_move(request: String) -> Result(Move, Error) {
+  parse_move_loop(request, [])
 }
 
-fn parse_path(request: String) -> Result(Action, Error) {
-  parse_path_loop(request, [])
-}
-
-fn parse_path_loop(
+fn parse_move_loop(
   request: String,
   positions: List(board.BoardIndex),
-) -> Result(Action, Error) {
+) -> Result(Move, Error) {
   case request {
     // base case - we've finished iterating, and now all everything is within
     // the `positions` variable
     "" -> {
       case positions {
-        [] -> Error(error.EmptyPath)
-        [from] -> Select(from:) |> Ok
+        [] -> Error(error.EmptyRequest)
+        [_] -> Error(error.IncompleteMove)
 
         // `to` represents the final destination of the path. It'll be first,
         // because we're prepending to the list every time
@@ -51,7 +45,7 @@ fn parse_path_loop(
           // We must assert on the reverse since it doesn't know we already 
           // handled the empty list case above
           let assert [from, ..middle] = list.reverse(rest)
-          Move(from:, middle:, to:) |> Ok
+          #(from, middle, to) |> Ok
         }
       }
     }
@@ -60,7 +54,7 @@ fn parse_path_loop(
     // `parse_position`, and keep going
     request -> {
       use #(position, request) <- result.try(request |> parse_position())
-      parse_path_loop(request, [position, ..positions])
+      parse_move_loop(request, [position, ..positions])
     }
   }
 }

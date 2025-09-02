@@ -5,59 +5,119 @@ import game.{type Game}
 import gleam/bool
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import input.{input}
 
-pub fn play() -> Nil {
-  let game = game.create()
-  board.print(game.board)
-  let _ = loop(game)
-  Nil
+pub fn main() -> Nil {
+  play()
 }
 
-type ActionResult {
-  Continue(Game)
-  Stop
+fn play() -> Nil {
+  let model = init()
+  display(model)
+  loop(model)
 }
 
-fn loop(game: Game) -> Result(Nil, error.Error) {
-  use request <- result.try(
-    game.active_color
-    |> prompt()
-    |> input()
-    |> result.replace_error(error.FailedToReadStdin),
-  )
+/// Application loop
+/// 
+/// The basic flow is:
+/// get user input -> update model -> display updated model to user
+fn loop(model: Model) -> Nil {
+  let assert Ok(request) = input("")
 
-  case handle_request(game, request) {
-    Ok(#(result, message)) -> {
-      io.println(message)
-      case result {
-        Continue(game) -> loop(game)
-        Stop -> Ok(Nil)
-      }
+  let msg = case request {
+    "q" | "quit" | "exit" -> UserEnteredQuit
+    "move" <> rest -> {
+      let path = string.trim_start(rest)
+      UserEnteredMove(path:)
     }
-    Error(e) -> {
-      e |> error.to_string() |> io.println_error()
-      loop(game)
+    "select" <> rest -> {
+      let position_string = string.trim_start(rest)
+      UserEnteredSelection(position_string:)
     }
+    _ -> panic as "unsupported command"
+  }
+
+  let model = update(model, msg)
+
+  display(model)
+
+  case model.game.state {
+    game.Ongoing -> loop(model)
+    _ -> Nil
   }
 }
 
-fn handle_request(
-  game: Game,
-  request: String,
-) -> Result(#(ActionResult, String), Error) {
-  use <- bool.guard(is_quit(request), return: #(Stop, "Player quit") |> Ok)
+/// Application's state
+pub type Model {
+  Model(
+    game: Game,
+    // any error that could've occurred during the game that needs to be displayed
+    error: Option(Error),
+    highlighted_squares: Option(List(board.BoardIndex)),
+    is_over: Bool,
+  )
+}
 
+pub fn init() -> Model {
+  Model(
+    game: game.create(),
+    error: None,
+    highlighted_squares: None,
+    is_over: False,
+  )
+}
+
+/// The way the user interacts with the model
+/// 
+/// For a CLI app, sent exclusively from terminal input
+pub type Msg {
+  //todo: new game
+  //todo: add some type of player forfeited message
+  UserEnteredQuit
+  UserEnteredMove(path: String)
+  UserEnteredSelection(position_string: String)
+}
+
+pub fn update(model: Model, msg: Msg) -> Model {
+  case msg {
+    UserEnteredMove(path:) ->
+      case move(model.game, path) {
+        Ok(game) -> Model(..model, game:, error: None)
+        Error(e) -> Model(..model, error: Some(e))
+      }
+    UserEnteredSelection(position_string:) ->
+      case select(model.game, position_string) {
+        Ok(highlighted_squares) ->
+          Model(
+            ..model,
+            highlighted_squares: Some(highlighted_squares),
+            error: None,
+          )
+        Error(e) -> Model(..model, error: Some(e))
+      }
+    UserEnteredQuit -> Model(..model, is_over: True)
+  }
+}
+
+/// Gets all possible move paths that a piece at the `position_string` could take
+/// 
+/// Paths returned as a flat list of indexes because that's all the UI needs
+/// in order to highlight them
+pub fn select(
+  game: Game,
+  position_string: String,
+) -> Result(List(board.BoardIndex), Error) {
   use <- bool.guard(
     game.state != game.Ongoing,
     return: Error(error.ActionAfterGameOver),
   )
-
-  use action <- result.try(action.parse(request))
+  use position <- result.try(action.parse_selection(position_string))
 
   use piece <- result.try(
-    case board.get(game.board, at: action.from) |> board.get_piece() {
+    case board.get(game.board, at: position) |> board.get_piece() {
       Ok(piece) if piece.color == game.active_color -> Ok(piece)
       Ok(piece) if piece.color != game.active_color ->
         Error(error.WrongColorPiece)
@@ -65,38 +125,58 @@ fn handle_request(
     },
   )
 
-  case action {
-    action.Move(from:, middle:, to:) ->
-      case game.move(game, piece, from, middle, to) {
-        Ok(game) ->
-          case game.state {
-            game.Win(winner) -> {
-              #(Stop, board.color_to_string(winner) <> " Wins!") |> Ok
-            }
-            game.Draw -> {
-              #(Stop, "Draw!") |> Ok
-            }
-            game.Ongoing -> {
-              #(Continue(game), board.to_string(game.board)) |> Ok
-            }
-          }
-        Error(e) -> Error(e)
-      }
-    action.Select(from:) -> {
-      let indexes =
-        game.generate_legal_moves(game.board, piece, from)
-        //index order is irrelevant
-        |> list.flat_map(fn(move) { [move.to, ..move.middle] })
-      #(Continue(game), board.highlight(game.board, indexes)) |> Ok
-    }
-  }
+  game.generate_legal_moves(game.board, piece, position)
+  //index order is irrelevant
+  |> list.flat_map(fn(move) { [move.to, ..move.middle] })
+  |> Ok
 }
 
-fn is_quit(request: String) -> Bool {
-  case request {
-    "quit" | "q" | "exit" -> True
-    _ -> False
+/// Wrapper around `game.move`
+/// 
+/// Main responsibility is getting the piece the player wants to move
+/// \+ its movement path from the `path` string
+pub fn move(game: Game, path: String) -> Result(Game, Error) {
+  use <- bool.guard(
+    game.state != game.Ongoing,
+    return: Error(error.ActionAfterGameOver),
+  )
+  use #(from, middle, to) <- result.try(action.parse_move(path))
+
+  use piece <- result.try(
+    case board.get(game.board, at: from) |> board.get_piece() {
+      Ok(piece) if piece.color == game.active_color -> Ok(piece)
+      Ok(piece) if piece.color != game.active_color ->
+        Error(error.WrongColorPiece)
+      _ -> Error(error.NoPieceAtStart)
+    },
+  )
+
+  game.move(game, piece, from, middle, to)
+}
+
+/// String representation of the model
+pub fn view(model: Model) -> String {
+  let board_string = case model.highlighted_squares {
+    None -> board.to_string(model.game.board)
+    Some(highlighted_squares) ->
+      board.highlight(model.game.board, highlighted_squares)
   }
+  let error_string = case model.error {
+    Some(e) -> error.to_string(e)
+    None -> ""
+  }
+
+  let prompt_string = prompt(model.game.active_color)
+
+  board_string <> "\n" <> error_string <> "\n" <> prompt_string <> "\n"
+}
+
+const esc = "\u{001b}"
+
+fn display(model: Model) -> Nil {
+  // Resets terminal cursor so the new board paints over the old one
+  io.print(esc <> "[2J" <> esc <> "[H")
+  model |> view() |> io.println()
 }
 
 fn prompt(active_color: board.Color) -> String {
@@ -106,8 +186,4 @@ fn prompt(active_color: board.Color) -> String {
   <> "  - Select piece\n"
   <> "  - Move piece\n"
   <> "\n"
-}
-
-pub fn main() -> Nil {
-  play()
 }

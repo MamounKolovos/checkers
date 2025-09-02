@@ -15,9 +15,9 @@ pub type Error {
 
   InvalidFile
   InvalidRank
-  EmptyPath
-  MissingDestination
-  UnexpectedAction(expected: String, got: String)
+  EmptyRequest
+  UnexpectedTrailingRequest(got: String)
+  IncompleteMove
   ActionAfterGameOver
 }
 
@@ -38,9 +38,10 @@ pub fn to_string(error: Error) -> String {
     UnexpectedChar(expected:, got:) -> "Expected " <> expected <> ", " <> got
     InvalidFile -> "Invalid file: must be a-h"
     InvalidRank -> "Invalid rank: must be 1-8"
-    EmptyPath -> "Empty path: please enter one"
-    MissingDestination -> "Missing destination: please enter one"
-    UnexpectedAction(expected:, got:) -> "Expected " <> expected <> ", " <> got
+    EmptyRequest -> "Empty path: please enter one"
+    UnexpectedTrailingRequest(got:) ->
+      "Unexpected trailing request, got " <> got
+    IncompleteMove -> "Incomplete move: please fill it out"
     ActionAfterGameOver ->
       "Player tried to take an action after the game has ended"
   }
