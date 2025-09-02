@@ -5,6 +5,7 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
+import position.{type Position}
 
 //TODO: make opaque
 pub type Game {
@@ -21,7 +22,7 @@ const plies_to_draw = 40
 
 //TODO: make opaque
 pub type Data {
-  Data(mappings: Dict(board.BoardIndex, board.Piece), plies_until_draw: Int)
+  Data(mappings: Dict(Position, board.Piece), plies_until_draw: Int)
 }
 
 //TODO: make opaque
@@ -45,8 +46,8 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
     Ok(fen.ParseResult(active_color:, white_mappings:, black_mappings:)) -> {
       let board =
         dict.merge(white_mappings, black_mappings)
-        |> dict.fold(from: board.empty(), with: fn(board, index, piece) {
-          board.set(board, at: index, to: board.Occupied(piece))
+        |> dict.fold(from: board.empty(), with: fn(board, position, piece) {
+          board.set(board, at: position, to: board.Occupied(piece))
         })
 
       let player_mappings = case active_color {
@@ -81,12 +82,12 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
 /// Determines whether a player lost based on their `mappings`
 fn is_player_defeated(
   board: Board,
-  mappings: Dict(board.BoardIndex, board.Piece),
+  mappings: Dict(Position, board.Piece),
 ) -> Bool {
   let movable_pieces =
-    dict.filter(mappings, keeping: fn(index, piece) {
-      let capture_builders = generate_capture_builders(board, index, piece)
-      let simple_builders = generate_simple_builders(board, index, piece)
+    dict.filter(mappings, keeping: fn(position, piece) {
+      let capture_builders = generate_capture_builders(board, position, piece)
+      let simple_builders = generate_simple_builders(board, position, piece)
       case capture_builders, simple_builders {
         [], [] -> False
         _, _ -> True
@@ -102,9 +103,9 @@ fn is_player_defeated(
 pub fn move(
   game: Game,
   piece: board.Piece,
-  from: board.BoardIndex,
-  middle: List(board.BoardIndex),
-  to: board.BoardIndex,
+  from: Position,
+  middle: List(Position),
+  to: Position,
 ) -> Result(Game, Error) {
   use <- bool.guard(
     game.state != Ongoing,
@@ -142,7 +143,7 @@ pub fn move(
   )
 
   // Promotion
-  let #(row, _) = board.index_to_row_col(to)
+  let #(row, _) = position.position_to_row_col(to)
   let piece = case piece, row {
     board.Man(board.Black as color), 7 | board.Man(board.White as color), 0 ->
       board.King(color)
@@ -154,8 +155,8 @@ pub fn move(
     game.board
     |> board.set(at: from, to: board.Empty)
     |> board.set(at: to, to: board.Occupied(piece))
-    |> list.fold(captured, from: _, with: fn(acc, square_index) {
-      board.set(acc, at: square_index, to: board.Empty)
+    |> list.fold(captured, from: _, with: fn(acc, capture_position) {
+      board.set(acc, at: capture_position, to: board.Empty)
     })
 
   let #(player_data, opponent_data) = {
@@ -231,17 +232,17 @@ pub fn move(
 pub type LegalMove {
   LegalMove(
     piece: board.Piece,
-    from: board.BoardIndex,
-    middle: List(board.BoardIndex),
-    to: board.BoardIndex,
-    captured: List(board.BoardIndex),
+    from: Position,
+    middle: List(Position),
+    to: Position,
+    captured: List(Position),
   )
 }
 
 pub fn generate_legal_moves(
   board: Board,
   piece: board.Piece,
-  from: board.BoardIndex,
+  from: Position,
 ) -> List(LegalMove) {
   let capture_builders = generate_capture_builders(board, from, piece)
   let simple_builders = generate_simple_builders(board, from, piece)
@@ -263,19 +264,15 @@ pub fn generate_legal_moves(
 }
 
 type SimpleBuilder {
-  SimpleBuilder(
-    piece: board.Piece,
-    from: board.BoardIndex,
-    to: board.BoardIndex,
-  )
+  SimpleBuilder(piece: board.Piece, from: Position, to: Position)
 }
 
 fn generate_simple_builders(
   board: Board,
-  from: board.BoardIndex,
+  from: Position,
   piece: board.Piece,
 ) -> List(SimpleBuilder) {
-  let #(from_row, from_col) = board.index_to_row_col(from)
+  let #(from_row, from_col) = position.position_to_row_col(from)
   case piece {
     board.Man(color) ->
       case color {
@@ -286,7 +283,10 @@ fn generate_simple_builders(
   }
   |> list.filter_map(fn(offset) {
     let #(row, col) = offset
-    use to <- result.try(board.row_col_to_index(from_row + row, from_col + col))
+    use to <- result.try(position.row_col_to_position(
+      from_row + row,
+      from_col + col,
+    ))
     case board.get(board, to) {
       board.Empty -> SimpleBuilder(piece:, from:, to:) |> Ok
       _ -> Error(Nil)
@@ -297,10 +297,10 @@ fn generate_simple_builders(
 type CaptureBuilder {
   CaptureBuilder(
     piece: board.Piece,
-    from: board.BoardIndex,
-    middle: List(board.BoardIndex),
-    to: board.BoardIndex,
-    captured: List(board.BoardIndex),
+    from: Position,
+    middle: List(Position),
+    to: Position,
+    captured: List(Position),
   )
 }
 
@@ -308,17 +308,17 @@ type CaptureSearch {
   CaptureSearch(
     board: Board,
     piece: board.Piece,
-    from: board.BoardIndex,
-    current: board.BoardIndex,
-    path: List(board.BoardIndex),
-    captured: List(board.BoardIndex),
+    from: Position,
+    current: Position,
+    path: List(Position),
+    captured: List(Position),
     acc: List(CaptureBuilder),
   )
 }
 
 fn generate_capture_builders(
   board: Board,
-  from: board.BoardIndex,
+  from: Position,
   piece: board.Piece,
 ) -> List(CaptureBuilder) {
   generate_capture_builders_loop(
@@ -339,8 +339,8 @@ fn generate_capture_builders_loop(
 ) -> List(CaptureBuilder) {
   let CaptureSearch(board:, piece:, from:, current:, path:, captured:, acc:) =
     capture_search
-  let #(from_row, from_col) = board.index_to_row_col(current)
-  let next_indexes =
+  let #(from_row, from_col) = position.position_to_row_col(current)
+  let next_positions =
     case piece {
       board.Man(board.Black) -> [#(2, 2), #(2, -2)]
       board.Man(board.White) -> [#(-2, 2), #(-2, -2)]
@@ -357,27 +357,27 @@ fn generate_capture_builders_loop(
         return: Error(Nil),
       )
 
-      use to <- result.try(board.row_col_to_index(new_row, new_col))
+      use to <- result.try(position.row_col_to_position(new_row, new_col))
       // destination square must be empty in order to jump to it
       case board.get(board, at: to) {
         board.Empty -> {
           let capture_row = from_row + { offset_row / 2 }
           let capture_col = from_col + { offset_col / 2 }
-          use capture_index <- result.try(board.row_col_to_index(
+          use capture_position <- result.try(position.row_col_to_position(
             capture_row,
             capture_col,
           ))
 
-          case board.get(board, at: capture_index) {
+          case board.get(board, at: capture_position) {
             board.Occupied(capture_piece) if capture_piece.color != piece.color ->
-              #(to, capture_index) |> Ok
+              #(to, capture_position) |> Ok
             _ -> Error(Nil)
           }
         }
         _ -> Error(Nil)
       }
     })
-  case next_indexes, path, captured {
+  case next_positions, path, captured {
     [], [], [] -> []
     [], [to, ..rest], captured -> [
       CaptureBuilder(
@@ -389,15 +389,15 @@ fn generate_capture_builders_loop(
       ),
       ..acc
     ]
-    next_indexes, path, captured ->
-      list.flat_map(next_indexes, fn(data) {
-        let #(next, capture_index) = data
+    next_positions, path, captured ->
+      list.flat_map(next_positions, fn(data) {
+        let #(next, capture_position) = data
         generate_capture_builders_loop(
           CaptureSearch(
             ..capture_search,
             current: next,
             path: [next, ..path],
-            captured: [capture_index, ..captured],
+            captured: [capture_position, ..captured],
           ),
         )
       })

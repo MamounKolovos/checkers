@@ -9,6 +9,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import input.{input}
+import position.{type Position}
 
 pub fn main() -> Nil {
   play()
@@ -56,7 +57,7 @@ pub type Model {
     game: Game,
     // any error that could've occurred during the game that needs to be displayed
     error: Option(Error),
-    highlighted_squares: Option(List(board.BoardIndex)),
+    highlighted_squares: Option(List(Position)),
     is_over: Bool,
   )
 }
@@ -104,12 +105,12 @@ pub fn update(model: Model, msg: Msg) -> Model {
 
 /// Gets all possible move paths that a piece at the `position_string` could take
 /// 
-/// Paths returned as a flat list of indexes because that's all the UI needs
+/// Paths returned as a flat list of positions because that's all the UI needs
 /// in order to highlight them
 pub fn select(
   game: Game,
   position_string: String,
-) -> Result(List(board.BoardIndex), Error) {
+) -> Result(List(Position), Error) {
   use <- bool.guard(
     game.state != game.Ongoing,
     return: Error(error.ActionAfterGameOver),
@@ -126,7 +127,7 @@ pub fn select(
   )
 
   game.generate_legal_moves(game.board, piece, position)
-  //index order is irrelevant
+  //position order is irrelevant
   |> list.flat_map(fn(move) { [move.to, ..move.middle] })
   |> Ok
 }

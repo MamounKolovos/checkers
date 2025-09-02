@@ -9,6 +9,7 @@ import gleam/dict
 import gleam/list
 import gleam/result
 import gleeunit
+import position.{type Position}
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -37,15 +38,15 @@ pub fn fen_parsing_test() {
 }
 
 pub fn action_parsing_test() {
-  let assert Ok(from) = board.from_int(20)
-  let assert Ok(to) = board.from_int(16)
+  let assert Ok(from) = position.from_int(20)
+  let assert Ok(to) = position.from_int(16)
   let assert Ok(move) = action.parse_move("a3b4")
   assert move == #(from, [], to)
 
-  let assert Ok(from) = board.from_int(1)
+  let assert Ok(from) = position.from_int(1)
   let assert Ok(middle) =
-    [board.from_int(8), board.from_int(17)] |> result.all()
-  let assert Ok(to) = board.from_int(26)
+    [position.from_int(8), position.from_int(17)] |> result.all()
+  let assert Ok(to) = position.from_int(26)
   let assert Ok(move) = action.parse_move("d8b6d4f2")
   assert move == #(from, middle, to)
 
@@ -58,7 +59,7 @@ pub fn action_parsing_test() {
 
   let assert Error(error.IncompleteMove) = action.parse_move("a3")
 
-  let assert Ok(position) = board.from_int(28)
+  let assert Ok(position) = position.from_int(28)
   let assert Ok(selection) = action.parse_selection("a1")
   assert selection == position
 
@@ -68,10 +69,10 @@ pub fn action_parsing_test() {
 
 pub fn piece_highlighting_test() {
   let assert Ok(game) = game.from_fen("B:W6,7,14,15,23:B2")
-  let assert Ok(indexes) = checkers.select(game, "d8")
+  let assert Ok(positions) = checkers.select(game, "d8")
 
   birdie.snap(
-    board.highlight(game.board, indexes),
+    board.highlight(game.board, positions),
     title: "Expect all possible move paths to be highlighted",
   )
 }
@@ -239,16 +240,16 @@ pub fn piece_promotion_test() {
   let assert Ok(game) = game.from_fen("B:B26:W11")
   let assert Ok(game) = checkers.move(game, "d2c1")
 
-  let assert Ok(index) = board.from_int(29)
+  let assert Ok(position) = position.from_int(29)
   let assert Ok(board.King(board.Black)) =
-    board.get(game.board, index) |> board.get_piece()
+    board.get(game.board, position) |> board.get_piece()
 
   let assert Ok(game) = game.from_fen("W:B26:W6")
   let assert Ok(game) = checkers.move(game, "c7d8")
 
-  let assert Ok(index) = board.from_int(1)
+  let assert Ok(position) = position.from_int(1)
   let assert Ok(board.King(board.White)) =
-    board.get(game.board, index) |> board.get_piece()
+    board.get(game.board, position) |> board.get_piece()
 }
 
 pub fn no_moves_for_piece_test() {

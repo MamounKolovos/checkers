@@ -4,43 +4,7 @@ import gleam/list
 import gleam/string
 import gleam_community/ansi
 import iv
-
-pub opaque type BoardIndex {
-  BoardIndex(Int)
-}
-
-pub fn from_int(i: Int) -> Result(BoardIndex, Nil) {
-  case i >= 0 && i < 32 {
-    True -> BoardIndex(i) |> Ok
-    False -> Nil |> Error
-  }
-}
-
-pub fn to_int(index: BoardIndex) -> Int {
-  let BoardIndex(i) = index
-  i
-}
-
-pub fn index_to_row_col(index: BoardIndex) -> #(Int, Int) {
-  let i = to_int(index)
-  let row = i / 4
-  let offset = i % 4
-
-  let col = case row % 2 {
-    0 -> offset * 2 + 1
-    1 -> offset * 2
-    _ -> panic
-  }
-
-  #(row, col)
-}
-
-pub fn row_col_to_index(row: Int, col: Int) -> Result(BoardIndex, Nil) {
-  case row >= 0 && row < 8 && col >= 0 && col < 8 {
-    True -> from_int({ row * 8 + col } / 2)
-    False -> Error(Nil)
-  }
-}
+import position.{type Position}
 
 pub type Color {
   White
@@ -102,31 +66,32 @@ pub fn empty() -> Board {
   Board(iv.repeat(Empty, 32))
 }
 
-pub fn get(from board: Board, at index: BoardIndex) -> Square {
+pub fn get(from board: Board, at position: Position) -> Square {
   let Board(squares) = board
-  let assert Ok(square) = iv.get(from: squares, at: to_int(index))
+  let assert Ok(square) = iv.get(from: squares, at: position.to_int(position))
   square
 }
 
-pub fn set(in board: Board, at index: BoardIndex, to square: Square) -> Board {
+pub fn set(in board: Board, at position: Position, to square: Square) -> Board {
   let Board(squares) = board
-  let assert Ok(squares) = iv.set(in: squares, at: to_int(index), to: square)
+  let assert Ok(squares) =
+    iv.set(in: squares, at: position.to_int(position), to: square)
   Board(squares)
 }
 
 fn row_to_string(
   row: Int,
   board: Board,
-  formatter: fn(BoardIndex, Square) -> String,
+  formatter: fn(Position, Square) -> String,
 ) -> String {
   let columns =
     list.range(0, 7)
     |> list.map(fn(col) {
       case { row + col } % 2 == 1 {
         True -> {
-          let assert Ok(index) = row_col_to_index(row, col)
-          let square = get(board, at: index)
-          formatter(index, square)
+          let assert Ok(position) = position.row_col_to_position(row, col)
+          let square = get(board, at: position)
+          formatter(position, square)
         }
         False -> " "
       }
@@ -136,7 +101,7 @@ fn row_to_string(
   int.to_string(8 - row) <> " | " <> columns <> " |"
 }
 
-pub fn format(board: Board, formatter fun: fn(BoardIndex, Square) -> String) {
+pub fn format(board: Board, formatter fun: fn(Position, Square) -> String) {
   let row_divider = "  ---------------------------------"
   let column_display = "    A   B   C   D   E   F   G   H"
 
@@ -160,9 +125,9 @@ pub fn print(board: Board) {
   |> io.println()
 }
 
-pub fn highlight(board: Board, square_indexes: List(BoardIndex)) -> String {
-  format(board, formatter: fn(index, square) {
-    case list.contains(square_indexes, index) {
+pub fn highlight(board: Board, positions: List(Position)) -> String {
+  format(board, formatter: fn(position, square) {
+    case list.contains(positions, position) {
       True -> square_to_str(square) |> ansi.bg_bright_green()
       False -> square_to_str(square)
     }
