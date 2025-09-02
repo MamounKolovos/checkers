@@ -1,8 +1,11 @@
+import gleam/int
+import position.{type Position}
+
 pub type Error {
   Todo
   FailedToReadStdin
   WrongColorPiece
-  NoPieceAtStart
+  ExpectedPieceOnSquare(position: Position)
 
   InvalidSimpleMove
   InvalidCaptureMove
@@ -15,6 +18,7 @@ pub type Error {
 
   InvalidFile
   InvalidRank
+  InvalidPosition
   EmptyRequest
   UnexpectedTrailingRequest(got: String)
   IncompleteMove
@@ -26,7 +30,9 @@ pub fn to_string(error: Error) -> String {
     Todo -> "Todo: replace with actual error"
     FailedToReadStdin -> "Error reading stdin"
     WrongColorPiece -> "Player tried to interact with opponent's piece"
-    NoPieceAtStart -> "No piece at starting position"
+    ExpectedPieceOnSquare(position:) ->
+      "Expected a piece on the square at position: "
+      <> { position |> position.to_int() |> int.to_string() }
     InvalidSimpleMove ->
       "Invalid move: must choose from the available simple moves"
     InvalidCaptureMove ->
@@ -38,6 +44,7 @@ pub fn to_string(error: Error) -> String {
     UnexpectedChar(expected:, got:) -> "Expected " <> expected <> ", " <> got
     InvalidFile -> "Invalid file: must be a-h"
     InvalidRank -> "Invalid rank: must be 1-8"
+    InvalidPosition -> "Invalid position: only black squares are playable"
     EmptyRequest -> "Empty path: please enter one"
     UnexpectedTrailingRequest(got:) ->
       "Unexpected trailing request, got " <> got

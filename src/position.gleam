@@ -1,3 +1,5 @@
+import gleam/bool
+
 pub opaque type Position {
   Position(Int)
 }
@@ -29,7 +31,12 @@ pub fn position_to_row_col(position: Position) -> #(Int, Int) {
 }
 
 pub fn row_col_to_position(row: Int, col: Int) -> Result(Position, Nil) {
-  case row >= 0 && row < 8 && col >= 0 && col < 8 {
+  use <- bool.guard(
+    row < 0 || row >= 8 || col < 0 || col >= 8,
+    return: Error(Nil),
+  )
+
+  case { row + col } % 2 == 1 {
     True -> from_int({ row * 8 + col } / 2)
     False -> Error(Nil)
   }

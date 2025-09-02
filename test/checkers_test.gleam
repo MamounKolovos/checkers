@@ -65,6 +65,13 @@ pub fn action_parsing_test() {
 
   let assert Error(error.UnexpectedTrailingRequest(got: "HELLO")) =
     action.parse_selection("a1HELLO")
+
+  // only the black squares are playable in checkers
+  // all the positions below are white squares in algebraic notation
+  let assert Error(error.InvalidPosition) = action.parse_selection("b1")
+  let assert Error(error.InvalidPosition) = action.parse_selection("c4")
+  let assert Error(error.InvalidPosition) = action.parse_selection("g2")
+  let assert Error(error.InvalidPosition) = action.parse_selection("h7")
 }
 
 pub fn piece_highlighting_test() {
@@ -77,9 +84,13 @@ pub fn piece_highlighting_test() {
   )
 }
 
-pub fn no_piece_at_start_test() {
+pub fn no_piece_on_square_test() {
+  let game = game.create()
+  let assert Error(error.ExpectedPieceOnSquare(position: _)) =
+    checkers.select(game, "b4")
+
   let assert Ok(game) = game.from_fen("B:W18:B14")
-  let assert Error(error.NoPieceAtStart) = checkers.move(game, "b8a7")
+  let assert Error(error.ExpectedPieceOnSquare(_)) = checkers.move(game, "b8a7")
 }
 
 pub fn game_over_all_captured_test() {
@@ -255,7 +266,7 @@ pub fn piece_promotion_test() {
 pub fn no_moves_for_piece_test() {
   let assert Ok(game) = game.from_fen("W:B13,15,17,18:W22,27")
   let assert Error(error.NoMovesForPiece) = checkers.move(game, "c3d4")
-  let assert Error(error.NoMovesForPiece) = checkers.move(game, "c3b5")
+  let assert Error(error.NoMovesForPiece) = checkers.move(game, "c3b4")
   let assert Error(error.NoMovesForPiece) = checkers.move(game, "c3e5")
   let assert Error(error.NoMovesForPiece) = checkers.move(game, "c3a5")
 }

@@ -122,7 +122,7 @@ pub fn select(
       Ok(piece) if piece.color == game.active_color -> Ok(piece)
       Ok(piece) if piece.color != game.active_color ->
         Error(error.WrongColorPiece)
-      _ -> Error(error.NoPieceAtStart)
+      _ -> Error(error.ExpectedPieceOnSquare(position:))
     },
   )
 
@@ -148,7 +148,7 @@ pub fn move(game: Game, path: String) -> Result(Game, Error) {
       Ok(piece) if piece.color == game.active_color -> Ok(piece)
       Ok(piece) if piece.color != game.active_color ->
         Error(error.WrongColorPiece)
-      _ -> Error(error.NoPieceAtStart)
+      _ -> Error(error.ExpectedPieceOnSquare(position: from))
     },
   )
 

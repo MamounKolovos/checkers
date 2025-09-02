@@ -62,7 +62,10 @@ fn parse_move_loop(
 fn parse_position(request: String) -> Result(#(Position, String), Error) {
   use #(col, request) <- result.try(request |> parse_file())
   use #(row, request) <- result.try(request |> parse_rank())
-  let assert Ok(position) = position.row_col_to_position(row, col)
+  use position <- result.try(
+    position.row_col_to_position(row, col)
+    |> result.replace_error(error.InvalidPosition),
+  )
   #(position, request) |> Ok
 }
 
