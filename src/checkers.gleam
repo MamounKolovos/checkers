@@ -167,7 +167,13 @@ pub fn view(model: Model) -> String {
     None -> ""
   }
 
-  let prompt_string = prompt(model.game.active_color)
+  let prompt_string = case model.game.state {
+    game.Ongoing -> prompt(model.game.active_color)
+
+    // Don't need to prompt user for further actions if game is over
+    game.Win(winner) -> board.color_to_string(winner) <> " Wins!"
+    game.Draw -> "Draw!"
+  }
 
   board_string <> "\n" <> error_string <> "\n" <> prompt_string <> "\n"
 }
@@ -186,5 +192,4 @@ fn prompt(active_color: board.Color) -> String {
   <> "\n"
   <> "  - Select piece\n"
   <> "  - Move piece\n"
-  <> "\n"
 }
