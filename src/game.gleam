@@ -25,6 +25,7 @@ pub type Data {
 }
 
 //TODO: make opaque
+//TODO: add forfeit
 pub type GameState {
   Win(board.Color)
   Draw
@@ -175,8 +176,7 @@ pub fn move(
     // A draw requires a player to complete 40 plies without making a capture
     // or moving a man, reset the counter otherwise.
     let player_plies_until_draw = case captured, piece {
-      [], board.King(color) if color == game.active_color ->
-        player_data.plies_until_draw - 1
+      [], board.King(_) -> player_data.plies_until_draw - 1
       _, _ -> plies_to_draw
     }
 
