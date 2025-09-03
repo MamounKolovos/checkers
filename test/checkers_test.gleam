@@ -100,7 +100,7 @@ pub fn game_over_all_captured_test() {
 }
 
 pub fn game_over_no_legal_moves_test() {
-  let assert Ok(game) = game.from_fen("B:B10,13,14,23,24,28:W17,32")
+  let assert Ok(game) = game.from_fen("B:B10,13,14,21,22,23,24,28:W17,32")
   let assert Ok(game) = checkers.move(game, "g3f2")
   assert game.state == game.Win(board.Black)
 }
@@ -184,7 +184,7 @@ pub fn move_after_game_over_test() {
 }
 
 pub fn move_after_game_over_1_test() {
-  let assert Ok(game) = game.from_fen("B:B10,13,14,23,24,28:W17,32")
+  let assert Ok(game) = game.from_fen("B:B10,13,14,21,22,23,24,28:W17,32")
   let assert Ok(game) = checkers.move(game, "g3f2")
   let assert Error(error.ActionAfterGameOver) = checkers.move(game, "e3f2")
   let assert Error(error.ActionAfterGameOver) = checkers.move(game, "g1f2")
@@ -213,7 +213,7 @@ pub fn capture_move_test() {
 
 pub fn capture_requires_empty_destination_test() {
   let assert Ok(game) = game.from_fen("W:B18,15:W22")
-  let assert Error(error.InvalidSimpleMove) = checkers.move(game, "c3e5")
+  let assert Error(error.IllegalMove) = checkers.move(game, "c3e5")
 }
 
 pub fn multi_capture_move_test() {
@@ -231,12 +231,22 @@ pub fn multi_capture_move_1_test() {
 /// If simple and capture moves are available, player must take a capture move
 pub fn must_capture_if_available_test() {
   let assert Ok(game) = game.from_fen("B:W18,27,28:B14")
-  let assert Error(error.InvalidCaptureMove) = checkers.move(game, "c5b4")
+  let assert Error(error.IllegalMove) = checkers.move(game, "c5b4")
 }
 
 pub fn must_capture_if_available_1_test() {
   let assert Ok(game) = game.from_fen("B:W6,7,14,15,23:B2")
-  let assert Error(error.InvalidCaptureMove) = checkers.move(game, "d8b6d4")
+  let assert Error(error.IllegalMove) = checkers.move(game, "d8b6d4")
+}
+
+/// Ensures that the must capture rule applies for all the player's pieces,
+/// not just any given one
+/// 
+/// If the player has 5 pieces and 2 of them can capture,
+/// they can only move+capture with those two
+pub fn global_must_capture_test() {
+  let assert Ok(game) = game.from_fen("W:W23,28:B18")
+  let assert Error(error.NoMovesForPiece) = checkers.move(game, "h2g3")
 }
 
 /// A capture move must include the full sequence when multiple captures are available.
@@ -244,7 +254,7 @@ pub fn must_capture_if_available_1_test() {
 /// Partial capture moves are invalid, even if the first jump is legal.
 pub fn must_complete_capture_path_test() {
   let assert Ok(game) = game.from_fen("B:W18,27,28:B14")
-  let assert Error(error.InvalidCaptureMove) = checkers.move(game, "c5e3")
+  let assert Error(error.IllegalMove) = checkers.move(game, "c5e3")
 }
 
 pub fn piece_promotion_test() {

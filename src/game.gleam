@@ -112,33 +112,20 @@ pub fn move(
     return: Error(error.ActionAfterGameOver),
   )
 
-  let capture_builders = generate_capture_builders(game.board, from, piece)
-  let simple_builders = generate_simple_builders(game.board, from, piece)
+  use <- bool.guard(
+    game.active_color != piece.color,
+    return: Error(error.WrongColorPiece),
+  )
 
-  use #(piece, from, to, captured) <- result.try(
-    case capture_builders, simple_builders {
-      //no moves available
-      [], [] -> Error(error.NoMovesForPiece)
-      // Player is allowed to do a simple move since no captures are possible
-      [], simple_builders -> {
-        use SimpleBuilder(piece:, from:, to:) <- result.map(
-          simple_builders
-          |> list.find(fn(builder) { builder.from == from && builder.to == to })
-          |> result.replace_error(error.InvalidSimpleMove),
-        )
-        #(piece, from, to, [])
-      }
-      // Player must do a capture move when one is available
-      capture_builders, _ -> {
-        use CaptureBuilder(piece:, from:, middle: _, to:, captured:) <- result.map(
-          capture_builders
-          |> list.find(fn(builder) {
-            builder.from == from && builder.middle == middle && builder.to == to
-          })
-          |> result.replace_error(error.InvalidCaptureMove),
-        )
-        #(piece, from, to, captured)
-      }
+  use LegalMove(from:, middle: _, to:, captured:) <- result.try(
+    case generate_legal_moves_for_piece(game, piece, from) {
+      Ok(moves) ->
+        moves
+        |> list.find(fn(move) {
+          move.from == from && move.middle == middle && move.to == to
+        })
+        |> result.replace_error(error.IllegalMove)
+      Error(e) -> Error(e)
     },
   )
 
@@ -231,7 +218,6 @@ pub fn move(
 //TODO: change to `PieceLegalMoves` -> #(piece, List(Move))
 pub type LegalMove {
   LegalMove(
-    piece: board.Piece,
     from: Position,
     middle: List(Position),
     to: Position,
@@ -239,32 +225,55 @@ pub type LegalMove {
   )
 }
 
-pub fn generate_legal_moves(
-  board: Board,
+/// This function is only a query,
+/// it does not care about the `active_color`, color is derived from the piece
+/// 
+/// The only reason the game is passed in is for the board and piece color mappings
+pub fn generate_legal_moves_for_piece(
+  game: Game,
   piece: board.Piece,
   from: Position,
-) -> List(LegalMove) {
-  let capture_builders = generate_capture_builders(board, from, piece)
-  let simple_builders = generate_simple_builders(board, from, piece)
-  case capture_builders, simple_builders {
-    [], [] -> []
-    [], simple_builders -> {
-      list.map(simple_builders, fn(builder) {
-        let SimpleBuilder(piece:, from:, to:) = builder
-        LegalMove(piece:, from:, middle: [], to:, captured: [])
-      })
+) -> Result(List(LegalMove), Error) {
+  let any_piece_has_available_capture =
+    case piece.color {
+      board.Black -> game.black_data.mappings
+      board.White -> game.white_data.mappings
     }
-    capture_builders, _ -> {
-      list.map(capture_builders, fn(builder) {
-        let CaptureBuilder(piece:, from:, middle:, to:, captured:) = builder
-        LegalMove(piece:, from:, middle:, to:, captured:)
-      })
-    }
+    |> dict.to_list()
+    |> list.any(satisfying: fn(mapping) {
+      let #(position, piece) = mapping
+      case generate_capture_builders(game.board, position, piece) {
+        [_, ..] -> True
+        [] -> False
+      }
+    })
+
+  case any_piece_has_available_capture {
+    True ->
+      case generate_capture_builders(game.board, from, piece) {
+        [] -> Error(error.NoMovesForPiece)
+        capture_builders ->
+          list.map(capture_builders, fn(builder) {
+            let CaptureBuilder(from:, middle:, to:, captured:) = builder
+            LegalMove(from:, middle:, to:, captured:)
+          })
+          |> Ok
+      }
+    False ->
+      case generate_simple_builders(game.board, from, piece) {
+        [] -> Error(error.NoMovesForPiece)
+        simple_builders ->
+          list.map(simple_builders, fn(builder) {
+            let SimpleBuilder(from:, to:) = builder
+            LegalMove(from:, middle: [], to:, captured: [])
+          })
+          |> Ok
+      }
   }
 }
 
 type SimpleBuilder {
-  SimpleBuilder(piece: board.Piece, from: Position, to: Position)
+  SimpleBuilder(from: Position, to: Position)
 }
 
 fn generate_simple_builders(
@@ -288,7 +297,7 @@ fn generate_simple_builders(
       from_col + col,
     ))
     case board.get(board, to) {
-      board.Empty -> SimpleBuilder(piece:, from:, to:) |> Ok
+      board.Empty -> SimpleBuilder(from:, to:) |> Ok
       _ -> Error(Nil)
     }
   })
@@ -296,7 +305,6 @@ fn generate_simple_builders(
 
 type CaptureBuilder {
   CaptureBuilder(
-    piece: board.Piece,
     from: Position,
     middle: List(Position),
     to: Position,
@@ -381,7 +389,6 @@ fn generate_capture_builders_loop(
     [], [], [] -> []
     [], [to, ..rest], captured -> [
       CaptureBuilder(
-        piece:,
         from:,
         middle: list.reverse(rest),
         to:,

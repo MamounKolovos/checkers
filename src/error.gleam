@@ -7,8 +7,7 @@ pub type Error {
   WrongColorPiece
   ExpectedPieceOnSquare(position: Position)
 
-  InvalidSimpleMove
-  InvalidCaptureMove
+  IllegalMove
   NoMovesForPiece
 
   SegmentMismatch
@@ -33,10 +32,7 @@ pub fn to_string(error: Error) -> String {
     ExpectedPieceOnSquare(position:) ->
       "Expected a piece on the square at position: "
       <> { position |> position.to_int() |> int.to_string() }
-    InvalidSimpleMove ->
-      "Invalid move: must choose from the available simple moves"
-    InvalidCaptureMove ->
-      "Invalid move: must choose from the available capture moves"
+    IllegalMove -> "Illegal move: must make a legal move"
     NoMovesForPiece -> "No moves available for selected piece"
     SegmentMismatch -> "Expected one white segment and one black segment"
     OutOfRange -> "Square number out of range"

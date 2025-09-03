@@ -126,10 +126,12 @@ pub fn select(
     },
   )
 
-  game.generate_legal_moves(game.board, piece, position)
-  //position order is irrelevant
-  |> list.flat_map(fn(move) { [move.to, ..move.middle] })
-  |> Ok
+  case game.generate_legal_moves_for_piece(game, piece, position) {
+    Ok(moves) ->
+      //position order is irrelevant
+      moves |> list.flat_map(fn(move) { [move.to, ..move.middle] }) |> Ok
+    Error(e) -> Error(e)
+  }
 }
 
 /// Wrapper around `game.move`
