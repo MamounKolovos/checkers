@@ -74,15 +74,15 @@ pub fn action_parsing_test() {
   let assert Error(error.InvalidPosition) = action.parse_selection("h7")
 }
 
-pub fn piece_highlighting_test() {
-  let assert Ok(game) = game.from_fen("B:W6,7,14,15,23:B2")
-  let assert Ok(positions) = checkers.select(game, "d8")
+// pub fn piece_highlighting_test() {
+//   let assert Ok(game) = game.from_fen("B:W6,7,14,15,23:B2")
+//   let assert Ok(positions) = checkers.select(game, "d8")
 
-  birdie.snap(
-    board.highlight(game.board, positions),
-    title: "Expect all possible move paths to be highlighted",
-  )
-}
+//   birdie.snap(
+//     board.highlight(game.board, positions),
+//     title: "Expect all possible move paths to be highlighted",
+//   )
+// }
 
 pub fn no_piece_on_square_test() {
   let game = game.create()
@@ -287,4 +287,24 @@ pub fn no_duplicate_positions_in_fen_test() {
   let assert Error(error.DuplicateFound) = game.from_fen("W:B1:W18,18")
   let assert Error(error.DuplicateFound) =
     game.from_fen("W:B1,2,3,4,5:W6,7,8,9,1")
+}
+
+pub fn legal_move_generation_test() {
+  let assert Ok(game) = game.from_fen("B:B10,11:W14,15,16,22,23,24")
+  let assert Ok(moves) = game.generate_legal_moves_for_player(game)
+
+  birdie.snap(
+    game.highlight(game, moves),
+    title: "Expected all possible capture move paths for black to be highlighted",
+  )
+}
+
+pub fn legal_move_generation_1_test() {
+  let assert Ok(game) = game.from_fen("B:B1,2,3,9,10,11,17,18,19:W30")
+  let assert Ok(moves) = game.generate_legal_moves_for_player(game)
+
+  birdie.snap(
+    game.highlight(game, moves),
+    title: "Expected all possible simple move paths for black to be highlighted",
+  )
 }

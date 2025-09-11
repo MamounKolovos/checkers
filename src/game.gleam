@@ -3,8 +3,12 @@ import error.{type Error}
 import fen
 import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
+import gleam_community/ansi
 import position.{type Position}
 
 //TODO: make opaque
@@ -225,6 +229,62 @@ pub type LegalMove {
   )
 }
 
+/// Generates all legal moves the `active_player` can make given
+/// the current state of the game
+pub fn generate_legal_moves_for_player(
+  game: Game,
+) -> Result(List(LegalMove), Error) {
+  let mappings = case game.active_color {
+    board.Black -> game.black_data.mappings
+    board.White -> game.white_data.mappings
+  }
+
+  let capture_builders =
+    collect_builders(
+      in: game.board,
+      using: mappings,
+      with: generate_capture_builders,
+    )
+
+  case capture_builders {
+    [] -> {
+      let simple_builders =
+        collect_builders(
+          in: game.board,
+          using: mappings,
+          with: generate_simple_builders,
+        )
+      case simple_builders {
+        [] -> Error(error.Todo)
+        simple_builders ->
+          list.map(simple_builders, fn(builder) {
+            let SimpleBuilder(from:, to:) = builder
+            LegalMove(from:, middle: [], to:, captured: [])
+          })
+          |> Ok
+      }
+    }
+    capture_builders ->
+      list.map(capture_builders, fn(builder) {
+        let CaptureBuilder(from:, middle:, to:, captured:) = builder
+        LegalMove(from:, middle:, to:, captured:)
+      })
+      |> Ok
+  }
+}
+
+fn collect_builders(
+  in board: Board,
+  using mappings: Dict(Position, board.Piece),
+  with collector: fn(Board, Position, board.Piece) -> List(builder),
+) -> List(builder) {
+  mappings
+  |> dict.fold(from: [], with: fn(acc, position, piece) {
+    let builders = collector(board, position, piece)
+    list.append(acc, builders)
+  })
+}
+
 /// This function is only a query,
 /// it does not care about the `active_color`, color is derived from the piece
 /// 
@@ -409,4 +469,137 @@ fn generate_capture_builders_loop(
         )
       })
   }
+}
+
+pub fn highlight(game: Game, moves: List(LegalMove)) -> String {
+  let chunked_moves = moves |> list.chunk(by: fn(move) { move.from })
+
+  let position_to_view =
+    chunked_moves
+    |> list.fold(from: [], with: fn(acc, moves) {
+      // let color = int.random(16_777_215)
+      let color = 0xffffff
+
+      list.fold(moves, from: [], with: fn(acc, move) {
+        let square = board.get(game.board, at: move.from)
+        let from = #(
+          move.from,
+          square
+            |> board.square_to_str()
+            |> ansi.underline()
+            |> ansi.italic()
+            |> ansi.bright_white()
+            |> Some
+            |> board.SquareView(
+              background: None,
+              position_content: move.from
+                |> position.to_int()
+                |> int.to_string()
+                |> ansi.hex(color)
+                |> Some,
+            ),
+        )
+
+        let middle =
+          move.middle
+          |> list.map(with: fn(position) {
+            #(
+              position,
+              board.SquareView(
+                content: None,
+                background: None,
+                position_content: position
+                  |> position.to_int()
+                  |> int.to_string()
+                  |> ansi.hex(color)
+                  |> Some,
+              ),
+            )
+          })
+
+        let to = #(
+          move.to,
+          board.SquareView(
+            content: "★" |> ansi.pink() |> Some,
+            background: None,
+            position_content: move.to
+              |> position.to_int()
+              |> int.to_string()
+              |> ansi.hex(color)
+              |> Some,
+          ),
+        )
+
+        let captured =
+          list.map(move.captured, with: fn(position) {
+            let square = board.get(game.board, at: position)
+            #(
+              position,
+              square
+                |> board.square_to_str()
+                |> string.to_option()
+                |> board.SquareView(background: None, position_content: None),
+            )
+          })
+
+        [[from], middle, [to], captured, ..acc]
+      })
+      |> list.flatten()
+      |> list.append(acc, _)
+    })
+    |> dict.from_list()
+
+  // let overlapping_positions = case chunked_moves {
+  //   [_] -> set.new()
+  //   chunked_moves ->
+  //     chunked_moves
+  //     |> list.fold(from: set.new(), with: fn(acc, chunk) {
+  //       let positions =
+  //         chunk
+  //         |> list.fold(from: set.new(), with: fn(acc, move) {
+  //           acc
+  //           |> set.insert(move.from)
+  //           |> list.fold(move.middle, from: _, with: fn(acc, position) {
+  //             acc |> set.insert(position)
+  //           })
+  //           |> set.insert(move.to)
+  //         })
+
+  //       case set.is_empty(acc) {
+  //         True -> positions
+  //         False -> set.intersection(acc, positions)
+  //       }
+  //     })
+  // }
+
+  // let position_to_view =
+  //   overlapping_positions
+  //   |> set.fold(from: position_to_view, with: fn(acc, position) {
+  //     acc
+  //     |> dict.upsert(update: position, with: fn(view) {
+  //       let assert Some(view) = view
+  //       case view.position_content {
+  //         Some(position_content) ->
+  //           board.SquareView(
+  //             ..view,
+  //             position_content: position_content
+  //               |> ansi.strip()
+  //               |> ansi.pink()
+  //               |> Some,
+  //           )
+  //         None -> view
+  //       }
+  //     })
+  //   })
+
+  board.format(game.board, formatter: fn(position, square) {
+    case dict.get(position_to_view, position) {
+      Ok(view) -> view
+      Error(Nil) ->
+        square
+        |> board.square_to_str()
+        |> Some
+        |> board.SquareView(background: None, position_content: None)
+    }
+  })
 }
