@@ -291,7 +291,7 @@ pub fn no_duplicate_positions_in_fen_test() {
 
 pub fn legal_move_generation_test() {
   let assert Ok(game) = game.from_fen("B:B10,11:W14,15,16,22,23,24")
-  let assert Ok(moves) = game.generate_legal_moves_for_player(game)
+  let moves = game.generate_legal_moves_for_player(game)
 
   birdie.snap(
     game.highlight(game, moves),
@@ -301,7 +301,7 @@ pub fn legal_move_generation_test() {
 
 pub fn legal_move_generation_1_test() {
   let assert Ok(game) = game.from_fen("B:B1,2,3,9,10,11,17,18,19:W30")
-  let assert Ok(moves) = game.generate_legal_moves_for_player(game)
+  let moves = game.generate_legal_moves_for_player(game)
 
   birdie.snap(
     game.highlight(game, moves),

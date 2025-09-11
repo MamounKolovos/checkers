@@ -123,13 +123,13 @@ pub fn move(
 
   use LegalMove(from:, middle: _, to:, captured:) <- result.try(
     case generate_legal_moves_for_piece(game, piece, from) {
-      Ok(moves) ->
+      [] -> Error(error.NoMovesForPiece)
+      moves ->
         moves
-        |> list.find(fn(move) {
+        |> list.find(one_that: fn(move) {
           move.from == from && move.middle == middle && move.to == to
         })
         |> result.replace_error(error.IllegalMove)
-      Error(e) -> Error(e)
     },
   )
 
@@ -231,9 +231,7 @@ pub type LegalMove {
 
 /// Generates all legal moves the `active_player` can make given
 /// the current state of the game
-pub fn generate_legal_moves_for_player(
-  game: Game,
-) -> Result(List(LegalMove), Error) {
+pub fn generate_legal_moves_for_player(game: Game) -> List(LegalMove) {
   let mappings = case game.active_color {
     board.Black -> game.black_data.mappings
     board.White -> game.white_data.mappings
@@ -254,22 +252,17 @@ pub fn generate_legal_moves_for_player(
           using: mappings,
           with: generate_simple_builders,
         )
-      case simple_builders {
-        [] -> Error(error.Todo)
-        simple_builders ->
-          list.map(simple_builders, fn(builder) {
-            let SimpleBuilder(from:, to:) = builder
-            LegalMove(from:, middle: [], to:, captured: [])
-          })
-          |> Ok
-      }
+
+      list.map(simple_builders, fn(builder) {
+        let SimpleBuilder(from:, to:) = builder
+        LegalMove(from:, middle: [], to:, captured: [])
+      })
     }
     capture_builders ->
       list.map(capture_builders, fn(builder) {
         let CaptureBuilder(from:, middle:, to:, captured:) = builder
         LegalMove(from:, middle:, to:, captured:)
       })
-      |> Ok
   }
 }
 
@@ -293,7 +286,7 @@ pub fn generate_legal_moves_for_piece(
   game: Game,
   piece: board.Piece,
   from: Position,
-) -> Result(List(LegalMove), Error) {
+) -> List(LegalMove) {
   let any_piece_has_available_capture =
     case piece.color {
       board.Black -> game.black_data.mappings
@@ -309,26 +302,19 @@ pub fn generate_legal_moves_for_piece(
     })
 
   case any_piece_has_available_capture {
-    True ->
-      case generate_capture_builders(game.board, from, piece) {
-        [] -> Error(error.NoMovesForPiece)
-        capture_builders ->
-          list.map(capture_builders, fn(builder) {
-            let CaptureBuilder(from:, middle:, to:, captured:) = builder
-            LegalMove(from:, middle:, to:, captured:)
-          })
-          |> Ok
-      }
+    True -> {
+      generate_capture_builders(game.board, from, piece)
+      |> list.map(with: fn(builder) {
+        let CaptureBuilder(from:, middle:, to:, captured:) = builder
+        LegalMove(from:, middle:, to:, captured:)
+      })
+    }
     False ->
-      case generate_simple_builders(game.board, from, piece) {
-        [] -> Error(error.NoMovesForPiece)
-        simple_builders ->
-          list.map(simple_builders, fn(builder) {
-            let SimpleBuilder(from:, to:) = builder
-            LegalMove(from:, middle: [], to:, captured: [])
-          })
-          |> Ok
-      }
+      generate_simple_builders(game.board, from, piece)
+      |> list.map(with: fn(builder) {
+        let SimpleBuilder(from:, to:) = builder
+        LegalMove(from:, middle: [], to:, captured: [])
+      })
   }
 }
 
