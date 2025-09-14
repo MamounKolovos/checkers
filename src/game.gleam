@@ -7,6 +7,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
 import gleam_community/ansi
 import position.{type Position}
@@ -365,6 +366,7 @@ type CaptureSearch {
     from: Position,
     current: Position,
     path: List(Position),
+    visited: Set(Position),
     captured: List(Position),
     acc: List(CaptureBuilder),
   )
@@ -382,6 +384,7 @@ fn generate_capture_builders(
       from:,
       current: from,
       path: [],
+      visited: set.new(),
       captured: [],
       acc: [],
     ),
@@ -391,8 +394,16 @@ fn generate_capture_builders(
 fn generate_capture_builders_loop(
   capture_search: CaptureSearch,
 ) -> List(CaptureBuilder) {
-  let CaptureSearch(board:, piece:, from:, current:, path:, captured:, acc:) =
-    capture_search
+  let CaptureSearch(
+    board:,
+    piece:,
+    from:,
+    current:,
+    path:,
+    visited:,
+    captured:,
+    acc:,
+  ) = capture_search
   let #(from_row, from_col) = position.position_to_row_col(current)
   let next_positions =
     case piece {
@@ -411,7 +422,16 @@ fn generate_capture_builders_loop(
         return: Error(Nil),
       )
 
-      use to <- result.try(position.row_col_to_position(new_row, new_col))
+      use to <- result.try(case position.row_col_to_position(new_row, new_col) {
+        Ok(to) ->
+          // prevents path from visiting squares its already visited
+          case set.contains(visited, to) {
+            False -> Ok(to)
+            True -> Error(Nil)
+          }
+        Error(Nil) -> Error(Nil)
+      })
+
       // destination square must be empty in order to jump to it
       case board.get(board, at: to) {
         board.Empty -> {
@@ -431,6 +451,7 @@ fn generate_capture_builders_loop(
         _ -> Error(Nil)
       }
     })
+
   case next_positions, path, captured {
     [], [], [] -> []
     [], [to, ..rest], captured -> [
@@ -442,7 +463,7 @@ fn generate_capture_builders_loop(
       ),
       ..acc
     ]
-    next_positions, path, captured ->
+    next_positions, path, captured -> {
       list.flat_map(next_positions, fn(data) {
         let #(next, capture_position) = data
         generate_capture_builders_loop(
@@ -450,10 +471,12 @@ fn generate_capture_builders_loop(
             ..capture_search,
             current: next,
             path: [next, ..path],
+            visited: set.insert(visited, next),
             captured: [capture_position, ..captured],
           ),
         )
       })
+    }
   }
 }
 

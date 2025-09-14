@@ -308,3 +308,15 @@ pub fn legal_move_generation_1_test() {
     title: "Expected all possible simple move paths for black to be highlighted",
   )
 }
+
+/// This is a move generation test to ensure that infinite recursion does not happen
+/// 
+/// Kings can move in any direction, so without proper checks, a king could
+/// repeatedly revisit squares in its capture path, leading to an infinite loop.
+/// 
+/// Example (All within the same capture path): king goes from 
+/// A -> B -> C -> B -> C -> B -> C -> ...
+pub fn king_cannot_recapture_same_piece_test() {
+  let assert Ok(game) = game.from_fen("B:W17,18:BK15")
+  game.generate_legal_moves_for_player(game)
+}
