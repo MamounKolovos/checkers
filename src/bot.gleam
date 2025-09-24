@@ -54,9 +54,7 @@ pub fn search(game: Game, depth: Int) -> Result(game.LegalMove, Nil) {
     |> list.map(with: fn(move) {
       let reply = process.new_subject()
       process.spawn(fn() {
-        let assert board.Occupied(piece) = board.get(game.board, at: move.from)
-        let assert Ok(game) =
-          game.move(game, piece, move.from, move.middle, move.to)
+        let assert Ok(game) = game.move(game, move)
 
         let score = negascout(game, depth)
         process.send(reply, #(score, move))
@@ -145,10 +143,7 @@ fn evaluate_moves(
     // all moves evaluated, return the highest score that can be guaranteed
     [] -> alpha
     [move, ..rest] -> {
-      // a piece should always exist at the start of a legal move, will fix later
-      let assert board.Occupied(piece) = board.get(game.board, at: move.from)
-      let assert Ok(new_game) =
-        game.move(game, piece, move.from, move.middle, move.to)
+      let assert Ok(new_game) = game.move(game, move)
 
       let score = score_game(new_game, alpha, beta, depth, is_first_move)
 

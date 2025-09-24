@@ -106,35 +106,13 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
   }
 }
 
-pub fn move(
-  game: Game,
-  piece: board.Piece,
-  from: Position,
-  middle: List(Position),
-  to: Position,
-) -> Result(Game, Error) {
+pub fn move(game: Game, move: LegalMove) -> Result(Game, Error) {
   use <- bool.guard(
     game.state != Ongoing,
     return: Error(error.ActionAfterGameOver),
   )
 
-  use <- bool.guard(
-    game.active_color != piece.color,
-    return: Error(error.WrongColorPiece),
-  )
-
-  use LegalMove(from:, middle: _, to:, captured:) <- result.try(
-    case generate_legal_moves_for_piece(game, from) {
-      Ok([]) -> Error(error.NoMovesForPiece)
-      Ok(moves) ->
-        moves
-        |> list.find(one_that: fn(move) {
-          move.from == from && move.middle == middle && move.to == to
-        })
-        |> result.replace_error(error.IllegalMove)
-      Error(e) -> Error(e)
-    },
-  )
+  let LegalMove(piece:, from:, middle: _, to:, captured:) = move
 
   // Promotion
   let #(row, _) = position.position_to_row_col(to)
@@ -211,6 +189,7 @@ pub fn move(
 //TODO: change to `PieceLegalMoves` -> #(piece, List(Move))
 pub type LegalMove {
   LegalMove(
+    piece: board.Piece,
     from: Position,
     middle: List(Position),
     to: Position,
@@ -221,42 +200,55 @@ pub type LegalMove {
 /// Generates all legal moves the `active_player` can make given
 /// the current state of the game
 pub fn generate_legal_moves_for_player(game: Game) -> List(LegalMove) {
-  let capture_builders = collect_builders(game, with: generate_capture_builders)
-
-  case capture_builders {
-    [] -> {
-      let simple_builders =
-        collect_builders(game, with: generate_simple_builders)
-
-      list.map(simple_builders, fn(builder) {
-        let SimpleBuilder(from:, to:) = builder
-        LegalMove(from:, middle: [], to:, captured: [])
-      })
-    }
-    capture_builders ->
-      list.map(capture_builders, fn(builder) {
-        let CaptureBuilder(from:, middle:, to:, captured:) = builder
-        LegalMove(from:, middle:, to:, captured:)
-      })
-  }
-}
-
-fn collect_builders(
-  game: Game,
-  with collector: fn(Game, Position) -> Result(List(builder), Error),
-) -> List(builder) {
-  case game.active_color {
+  let mappings = case game.active_color {
     board.Black -> game.black_data.mappings
     board.White -> game.white_data.mappings
   }
-  |> dict.fold(from: [], with: fn(acc, position, _) {
-    let builders = collector(game, position) |> result.unwrap([])
-    list.append(acc, builders)
-  })
+
+  let capture_builders =
+    mappings
+    |> dict.keys()
+    |> list.flat_map(with: fn(position) {
+      let assert Ok(#(piece, builders)) =
+        generate_capture_builders(game, position)
+
+      builders
+      |> list.map(with: fn(builder) {
+        LegalMove(
+          piece:,
+          from: builder.from,
+          middle: builder.middle,
+          to: builder.to,
+          captured: builder.captured,
+        )
+      })
+    })
+
+  case capture_builders {
+    [] -> {
+      mappings
+      |> dict.keys()
+      |> list.flat_map(with: fn(position) {
+        let assert Ok(#(piece, builders)) =
+          generate_simple_builders(game, position)
+
+        builders
+        |> list.map(with: fn(builder) {
+          LegalMove(
+            piece:,
+            from: builder.from,
+            middle: [],
+            to: builder.to,
+            captured: [],
+          )
+        })
+      })
+    }
+    capture_builders -> capture_builders
+  }
 }
 
-//TODO: rename to `generate_legal_moves_at_position`
-pub fn generate_legal_moves_for_piece(
+pub fn generate_legal_moves_at_position(
   game: Game,
   from: Position,
 ) -> Result(List(LegalMove), Error) {
@@ -269,29 +261,47 @@ pub fn generate_legal_moves_for_piece(
     |> list.any(satisfying: fn(mapping) {
       let #(position, _) = mapping
       case generate_capture_builders(game, position) {
-        Ok([_, ..]) -> True
+        Ok(#(_, [_, ..])) -> True
         _ -> False
       }
     })
 
   case any_piece_has_available_capture {
     True -> {
-      use builders <- result.map(generate_capture_builders(game, from))
+      use #(piece, builders) <- result.map(generate_capture_builders(game, from))
       builders
       |> list.map(with: fn(builder) {
         let CaptureBuilder(from:, middle:, to:, captured:) = builder
-        LegalMove(from:, middle:, to:, captured:)
+        LegalMove(piece:, from:, middle:, to:, captured:)
       })
     }
     False -> {
-      use builders <- result.map(generate_simple_builders(game, from))
+      use #(piece, builders) <- result.map(generate_simple_builders(game, from))
 
       builders
       |> list.map(with: fn(builder) {
         let SimpleBuilder(from:, to:) = builder
-        LegalMove(from:, middle: [], to:, captured: [])
+        LegalMove(piece:, from:, middle: [], to:, captured: [])
       })
     }
+  }
+}
+
+pub fn create_legal_move(
+  game: Game,
+  from: Position,
+  middle: List(Position),
+  to: Position,
+) -> Result(LegalMove, Error) {
+  case generate_legal_moves_at_position(game, from) {
+    Ok([]) -> Error(error.NoMovesForPiece)
+    Ok(moves) ->
+      moves
+      |> list.find(one_that: fn(move) {
+        move.from == from && move.middle == middle && move.to == to
+      })
+      |> result.replace_error(error.IllegalMove)
+    Error(e) -> Error(e)
   }
 }
 
@@ -302,7 +312,7 @@ type SimpleBuilder {
 fn generate_simple_builders(
   game: Game,
   from: Position,
-) -> Result(List(SimpleBuilder), Error) {
+) -> Result(#(board.Piece, List(SimpleBuilder)), Error) {
   use piece <- result.try(
     case board.get(game.board, at: from) |> board.get_piece() {
       Ok(piece) if piece.color == game.active_color -> Ok(piece)
@@ -313,26 +323,27 @@ fn generate_simple_builders(
   )
 
   let #(from_row, from_col) = position.position_to_row_col(from)
-  case piece {
-    board.Man(color) ->
-      case color {
-        board.Black -> [#(1, 1), #(1, -1)]
-        board.White -> [#(-1, 1), #(-1, -1)]
-      }
-    board.King(_) -> [#(1, 1), #(1, -1), #(-1, 1), #(-1, -1)]
-  }
-  |> list.filter_map(fn(offset) {
-    let #(row, col) = offset
-    use to <- result.try(position.row_col_to_position(
-      from_row + row,
-      from_col + col,
-    ))
-    case board.get(game.board, to) {
-      board.Empty -> SimpleBuilder(from:, to:) |> Ok
-      _ -> Error(Nil)
+  let builders =
+    case piece {
+      board.Man(color) ->
+        case color {
+          board.Black -> [#(1, 1), #(1, -1)]
+          board.White -> [#(-1, 1), #(-1, -1)]
+        }
+      board.King(_) -> [#(1, 1), #(1, -1), #(-1, 1), #(-1, -1)]
     }
-  })
-  |> Ok
+    |> list.filter_map(fn(offset) {
+      let #(row, col) = offset
+      use to <- result.try(position.row_col_to_position(
+        from_row + row,
+        from_col + col,
+      ))
+      case board.get(game.board, to) {
+        board.Empty -> SimpleBuilder(from:, to:) |> Ok
+        _ -> Error(Nil)
+      }
+    })
+  #(piece, builders) |> Ok
 }
 
 type CaptureBuilder {
@@ -360,7 +371,7 @@ type CaptureSearch {
 fn generate_capture_builders(
   game: Game,
   from: Position,
-) -> Result(List(CaptureBuilder), Error) {
+) -> Result(#(board.Piece, List(CaptureBuilder)), Error) {
   use piece <- result.try(
     case board.get(game.board, at: from) |> board.get_piece() {
       Ok(piece) if piece.color == game.active_color -> Ok(piece)
@@ -370,19 +381,20 @@ fn generate_capture_builders(
     },
   )
 
-  generate_capture_builders_loop(
-    CaptureSearch(
-      game:,
-      piece:,
-      from:,
-      current: from,
-      path: [],
-      visited: set.new(),
-      captured: [],
-      acc: [],
-    ),
-  )
-  |> Ok
+  let builders =
+    generate_capture_builders_loop(
+      CaptureSearch(
+        game:,
+        piece:,
+        from:,
+        current: from,
+        path: [],
+        visited: set.new(),
+        captured: [],
+        acc: [],
+      ),
+    )
+  #(piece, builders) |> Ok
 }
 
 fn generate_capture_builders_loop(
