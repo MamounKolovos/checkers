@@ -38,6 +38,36 @@ pub type GameState {
   Ongoing
 }
 
+/// Opponent just moved, determine state from the perspective of the new active player
+fn state(game: Game) -> GameState {
+  let opponent_plies_until_draw = case game.active_color {
+    board.Black -> game.white_data.plies_until_draw
+    board.White -> game.black_data.plies_until_draw
+  }
+
+  let is_draw = case opponent_plies_until_draw {
+    // opponent went 40 plies without capturing or moving a man
+    plies if plies == 0 -> True
+    // not a draw yet
+    plies if plies > 0 -> False
+    // negative; should never happen
+    _ -> panic
+  }
+
+  case is_active_player_defeated(game), is_draw {
+    // wins take precedence over draws in the rare case both are true
+    True, _ -> Win(board.switch_color(game.active_color))
+    False, True -> Draw
+    False, False -> Ongoing
+  }
+}
+
+/// Defeated if all player's pieces are captured OR 
+/// if player has no pieces left with legal moves
+fn is_active_player_defeated(game: Game) -> Bool {
+  game |> generate_legal_moves_for_player() |> list.is_empty()
+}
+
 pub fn create() -> Game {
   let assert Ok(game) =
     from_fen(
@@ -55,54 +85,25 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
           board.set(board, at: position, to: board.Occupied(piece))
         })
 
-      let player_mappings = case active_color {
-        board.Black -> black_mappings
-        board.White -> white_mappings
-      }
+      let game =
+        Game(
+          state: Ongoing,
+          board:,
+          active_color:,
+          black_data: Data(
+            mappings: black_mappings,
+            plies_until_draw: plies_to_draw,
+          ),
+          white_data: Data(
+            mappings: white_mappings,
+            plies_until_draw: plies_to_draw,
+          ),
+        )
 
-      let state = case is_player_defeated(board, player_mappings) {
-        True -> Win(board.switch_color(active_color))
-        False -> Ongoing
-      }
-
-      Game(
-        state:,
-        board:,
-        active_color:,
-        black_data: Data(
-          mappings: black_mappings,
-          plies_until_draw: plies_to_draw,
-        ),
-        white_data: Data(
-          mappings: white_mappings,
-          plies_until_draw: plies_to_draw,
-        ),
-      )
-      |> Ok
+      Game(..game, state: state(game)) |> Ok
     }
     Error(e) -> Error(e)
   }
-}
-
-/// Determines whether a player lost based on their `mappings`
-fn is_player_defeated(
-  board: Board,
-  mappings: Dict(Position, board.Piece),
-) -> Bool {
-  let movable_pieces =
-    dict.filter(mappings, keeping: fn(position, piece) {
-      let capture_builders = generate_capture_builders(board, position, piece)
-      let simple_builders = generate_simple_builders(board, position, piece)
-      case capture_builders, simple_builders {
-        [], [] -> False
-        _, _ -> True
-      }
-    })
-
-  // all player's pieces are captured
-  dict.is_empty(mappings)
-  // player has no pieces left with legal moves
-  || dict.is_empty(movable_pieces)
 }
 
 pub fn move(
@@ -123,14 +124,15 @@ pub fn move(
   )
 
   use LegalMove(from:, middle: _, to:, captured:) <- result.try(
-    case generate_legal_moves_for_piece(game, piece, from) {
-      [] -> Error(error.NoMovesForPiece)
-      moves ->
+    case generate_legal_moves_for_piece(game, from) {
+      Ok([]) -> Error(error.NoMovesForPiece)
+      Ok(moves) ->
         moves
         |> list.find(one_that: fn(move) {
           move.from == from && move.middle == middle && move.to == to
         })
         |> result.replace_error(error.IllegalMove)
+      Error(e) -> Error(e)
     },
   )
 
@@ -194,30 +196,16 @@ pub fn move(
     board.White -> #(opponent_data, player_data)
   }
 
-  let is_draw = case player_data.plies_until_draw {
-    // player went 40 plies without capturing or moving a man
-    plies if plies == 0 -> True
-    // not a draw yet
-    plies if plies > 0 -> False
-    // negative; should never happen
-    _ -> panic
-  }
+  let game =
+    Game(
+      ..game,
+      board:,
+      active_color: board.switch_color(game.active_color),
+      black_data:,
+      white_data:,
+    )
 
-  let state = case is_player_defeated(board, opponent_data.mappings), is_draw {
-    // wins take precedence over draws in the rare case both are true
-    True, _ -> Win(game.active_color)
-    False, True -> Draw
-    False, False -> Ongoing
-  }
-
-  Game(
-    state:,
-    board:,
-    active_color: board.switch_color(game.active_color),
-    black_data:,
-    white_data:,
-  )
-  |> Ok
+  Game(..game, state: state(game)) |> Ok
 }
 
 //TODO: change to `PieceLegalMoves` -> #(piece, List(Move))
@@ -233,26 +221,12 @@ pub type LegalMove {
 /// Generates all legal moves the `active_player` can make given
 /// the current state of the game
 pub fn generate_legal_moves_for_player(game: Game) -> List(LegalMove) {
-  let mappings = case game.active_color {
-    board.Black -> game.black_data.mappings
-    board.White -> game.white_data.mappings
-  }
-
-  let capture_builders =
-    collect_builders(
-      in: game.board,
-      using: mappings,
-      with: generate_capture_builders,
-    )
+  let capture_builders = collect_builders(game, with: generate_capture_builders)
 
   case capture_builders {
     [] -> {
       let simple_builders =
-        collect_builders(
-          in: game.board,
-          using: mappings,
-          with: generate_simple_builders,
-        )
+        collect_builders(game, with: generate_simple_builders)
 
       list.map(simple_builders, fn(builder) {
         let SimpleBuilder(from:, to:) = builder
@@ -268,54 +242,56 @@ pub fn generate_legal_moves_for_player(game: Game) -> List(LegalMove) {
 }
 
 fn collect_builders(
-  in board: Board,
-  using mappings: Dict(Position, board.Piece),
-  with collector: fn(Board, Position, board.Piece) -> List(builder),
+  game: Game,
+  with collector: fn(Game, Position) -> Result(List(builder), Error),
 ) -> List(builder) {
-  mappings
-  |> dict.fold(from: [], with: fn(acc, position, piece) {
-    let builders = collector(board, position, piece)
+  case game.active_color {
+    board.Black -> game.black_data.mappings
+    board.White -> game.white_data.mappings
+  }
+  |> dict.fold(from: [], with: fn(acc, position, _) {
+    let builders = collector(game, position) |> result.unwrap([])
     list.append(acc, builders)
   })
 }
 
-/// This function is only a query,
-/// it does not care about the `active_color`, color is derived from the piece
-/// 
-/// The only reason the game is passed in is for the board and piece color mappings
+//TODO: rename to `generate_legal_moves_at_position`
 pub fn generate_legal_moves_for_piece(
   game: Game,
-  piece: board.Piece,
   from: Position,
-) -> List(LegalMove) {
+) -> Result(List(LegalMove), Error) {
   let any_piece_has_available_capture =
-    case piece.color {
+    case game.active_color {
       board.Black -> game.black_data.mappings
       board.White -> game.white_data.mappings
     }
     |> dict.to_list()
     |> list.any(satisfying: fn(mapping) {
-      let #(position, piece) = mapping
-      case generate_capture_builders(game.board, position, piece) {
-        [_, ..] -> True
-        [] -> False
+      let #(position, _) = mapping
+      case generate_capture_builders(game, position) {
+        Ok([_, ..]) -> True
+        _ -> False
       }
     })
 
   case any_piece_has_available_capture {
     True -> {
-      generate_capture_builders(game.board, from, piece)
+      use builders <- result.map(generate_capture_builders(game, from))
+      builders
       |> list.map(with: fn(builder) {
         let CaptureBuilder(from:, middle:, to:, captured:) = builder
         LegalMove(from:, middle:, to:, captured:)
       })
     }
-    False ->
-      generate_simple_builders(game.board, from, piece)
+    False -> {
+      use builders <- result.map(generate_simple_builders(game, from))
+
+      builders
       |> list.map(with: fn(builder) {
         let SimpleBuilder(from:, to:) = builder
         LegalMove(from:, middle: [], to:, captured: [])
       })
+    }
   }
 }
 
@@ -324,10 +300,18 @@ type SimpleBuilder {
 }
 
 fn generate_simple_builders(
-  board: Board,
+  game: Game,
   from: Position,
-  piece: board.Piece,
-) -> List(SimpleBuilder) {
+) -> Result(List(SimpleBuilder), Error) {
+  use piece <- result.try(
+    case board.get(game.board, at: from) |> board.get_piece() {
+      Ok(piece) if piece.color == game.active_color -> Ok(piece)
+      Ok(piece) if piece.color != game.active_color ->
+        Error(error.WrongColorPiece)
+      _ -> Error(error.ExpectedPieceOnSquare(position: from))
+    },
+  )
+
   let #(from_row, from_col) = position.position_to_row_col(from)
   case piece {
     board.Man(color) ->
@@ -343,11 +327,12 @@ fn generate_simple_builders(
       from_row + row,
       from_col + col,
     ))
-    case board.get(board, to) {
+    case board.get(game.board, to) {
       board.Empty -> SimpleBuilder(from:, to:) |> Ok
       _ -> Error(Nil)
     }
   })
+  |> Ok
 }
 
 type CaptureBuilder {
@@ -361,7 +346,7 @@ type CaptureBuilder {
 
 type CaptureSearch {
   CaptureSearch(
-    board: Board,
+    game: Game,
     piece: board.Piece,
     from: Position,
     current: Position,
@@ -373,13 +358,21 @@ type CaptureSearch {
 }
 
 fn generate_capture_builders(
-  board: Board,
+  game: Game,
   from: Position,
-  piece: board.Piece,
-) -> List(CaptureBuilder) {
+) -> Result(List(CaptureBuilder), Error) {
+  use piece <- result.try(
+    case board.get(game.board, at: from) |> board.get_piece() {
+      Ok(piece) if piece.color == game.active_color -> Ok(piece)
+      Ok(piece) if piece.color != game.active_color ->
+        Error(error.WrongColorPiece)
+      _ -> Error(error.ExpectedPieceOnSquare(position: from))
+    },
+  )
+
   generate_capture_builders_loop(
     CaptureSearch(
-      board:,
+      game:,
       piece:,
       from:,
       current: from,
@@ -389,13 +382,14 @@ fn generate_capture_builders(
       acc: [],
     ),
   )
+  |> Ok
 }
 
 fn generate_capture_builders_loop(
   capture_search: CaptureSearch,
 ) -> List(CaptureBuilder) {
   let CaptureSearch(
-    board:,
+    game:,
     piece:,
     from:,
     current:,
@@ -406,6 +400,7 @@ fn generate_capture_builders_loop(
   ) = capture_search
   let #(from_row, from_col) = position.position_to_row_col(current)
   let next_positions =
+    // could be moved outside to the wrapper so passing in piece isnt necessary
     case piece {
       board.Man(board.Black) -> [#(2, 2), #(2, -2)]
       board.Man(board.White) -> [#(-2, 2), #(-2, -2)]
@@ -433,7 +428,7 @@ fn generate_capture_builders_loop(
       })
 
       // destination square must be empty in order to jump to it
-      case board.get(board, at: to) {
+      case board.get(game.board, at: to) {
         board.Empty -> {
           let capture_row = from_row + { offset_row / 2 }
           let capture_col = from_col + { offset_col / 2 }
@@ -442,7 +437,7 @@ fn generate_capture_builders_loop(
             capture_col,
           ))
 
-          case board.get(board, at: capture_position) {
+          case board.get(game.board, at: capture_position) {
             board.Occupied(capture_piece) if capture_piece.color != piece.color ->
               #(to, capture_position) |> Ok
             _ -> Error(Nil)
