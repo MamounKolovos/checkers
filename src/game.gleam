@@ -2,7 +2,7 @@ import board.{type Board}
 import error.{type Error}
 import fen
 import gleam/bool
-import gleam/dict.{type Dict}
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -18,17 +18,12 @@ pub type Game {
     state: GameState,
     board: Board,
     active_color: board.Color,
-    black_data: Data,
-    white_data: Data,
+    black_plies_until_draw: Int,
+    white_plies_until_draw: Int,
   )
 }
 
 const plies_to_draw = 40
-
-//TODO: make opaque
-pub type Data {
-  Data(mappings: Dict(Position, board.Piece), plies_until_draw: Int)
-}
 
 //TODO: make opaque
 //TODO: add forfeit
@@ -38,11 +33,48 @@ pub type GameState {
   Ongoing
 }
 
+/// A type-safe wrapper around an occupied square on the board.
+/// 
+/// The wrapper binds the square to a specific game instance. Ownership
+/// can only be acquired through the smart constructor, which ensures
+/// the piece belongs to the active player.
+pub opaque type OwnedSquare {
+  OwnedSquare(game: Game, position: Position, piece: board.Piece)
+}
+
+/// Smart constructor that checks the square is occupied **and** that the
+/// piece belongs to the active player before granting ownership
+pub fn new_owned_square(
+  game: Game,
+  position: Position,
+) -> Result(OwnedSquare, Error) {
+  case board.get(game.board, at: position) {
+    board.Occupied(piece) if piece.color == game.active_color -> {
+      OwnedSquare(game:, piece:, position:) |> Ok
+    }
+    board.Occupied(piece) if piece.color != game.active_color ->
+      Error(error.WrongColorPiece)
+    _ -> Error(error.ExpectedPieceOnSquare(position:))
+  }
+}
+
+/// Takes ownership of all squares occupied by the active player's pieces
+pub fn take_ownership_of_occupied_squares(game: Game) -> List(OwnedSquare) {
+  list.range(0, 31)
+  |> list.fold(from: [], with: fn(acc, i) {
+    let assert Ok(position) = position.from_int(i)
+    case new_owned_square(game, position) {
+      Ok(owned_square) -> [owned_square, ..acc]
+      _ -> acc
+    }
+  })
+}
+
 /// Opponent just moved, determine state from the perspective of the new active player
 fn state(game: Game) -> GameState {
   let opponent_plies_until_draw = case game.active_color {
-    board.Black -> game.white_data.plies_until_draw
-    board.White -> game.black_data.plies_until_draw
+    board.Black -> game.white_plies_until_draw
+    board.White -> game.black_plies_until_draw
   }
 
   let is_draw = case opponent_plies_until_draw {
@@ -90,14 +122,8 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
           state: Ongoing,
           board:,
           active_color:,
-          black_data: Data(
-            mappings: black_mappings,
-            plies_until_draw: plies_to_draw,
-          ),
-          white_data: Data(
-            mappings: white_mappings,
-            plies_until_draw: plies_to_draw,
-          ),
+          black_plies_until_draw: plies_to_draw,
+          white_plies_until_draw: plies_to_draw,
         )
 
       Game(..game, state: state(game)) |> Ok
@@ -106,11 +132,8 @@ pub fn from_fen(fen: String) -> Result(Game, Error) {
   }
 }
 
-pub fn move(game: Game, move: LegalMove) -> Result(Game, Error) {
-  use <- bool.guard(
-    game.state != Ongoing,
-    return: Error(error.ActionAfterGameOver),
-  )
+pub fn move(game: Game, move: LegalMove) -> Game {
+  use <- bool.guard(game.state != Ongoing, return: game)
 
   let LegalMove(piece:, from:, middle: _, to:, captured:) = move
 
@@ -131,47 +154,27 @@ pub fn move(game: Game, move: LegalMove) -> Result(Game, Error) {
       board.set(acc, at: capture_position, to: board.Empty)
     })
 
-  let #(player_data, opponent_data) = {
-    // use a player-opponent model instead of a black-white model
-    // it allows us to avoid duplicating the logic for both colors
-    let #(player_data, opponent_data) = case game.active_color {
-      board.Black -> #(game.black_data, game.white_data)
-      board.White -> #(game.white_data, game.black_data)
+  // A draw requires a player to complete 40 plies without making a capture
+  // or moving a man, reset the counter otherwise.
+  let update_plies = fn(plies) {
+    case captured, piece {
+      [], board.King(_) -> plies - 1
+      _, _ -> plies
     }
-
-    // move piece from origin to destination,
-    // updating its position in terms of the mappings
-    let player_mappings =
-      player_data.mappings
-      |> dict.delete(delete: from)
-      |> dict.insert(for: to, insert: piece)
-
-    // A draw requires a player to complete 40 plies without making a capture
-    // or moving a man, reset the counter otherwise.
-    let player_plies_until_draw = case captured, piece {
-      [], board.King(_) -> player_data.plies_until_draw - 1
-      _, _ -> plies_to_draw
-    }
-
-    // remove captured pieces from opponent's mappings
-    let opponent_mappings = dict.drop(opponent_data.mappings, drop: captured)
-
-    let player_data =
-      Data(mappings: player_mappings, plies_until_draw: player_plies_until_draw)
-    // plies are half-moves, so they can only change for the active player
-    let opponent_data =
-      Data(
-        mappings: opponent_mappings,
-        plies_until_draw: opponent_data.plies_until_draw,
-      )
-
-    #(player_data, opponent_data)
   }
 
-  // convert back to black-white model after transformations are done
-  let #(black_data, white_data) = case game.active_color {
-    board.Black -> #(player_data, opponent_data)
-    board.White -> #(opponent_data, player_data)
+  let #(black_plies_until_draw, white_plies_until_draw) = case
+    game.active_color
+  {
+    board.Black -> #(
+      update_plies(game.black_plies_until_draw),
+      game.white_plies_until_draw,
+    )
+
+    board.White -> #(
+      game.black_plies_until_draw,
+      update_plies(game.white_plies_until_draw),
+    )
   }
 
   let game =
@@ -179,11 +182,11 @@ pub fn move(game: Game, move: LegalMove) -> Result(Game, Error) {
       ..game,
       board:,
       active_color: board.switch_color(game.active_color),
-      black_data:,
-      white_data:,
+      black_plies_until_draw:,
+      white_plies_until_draw:,
     )
 
-  Game(..game, state: state(game)) |> Ok
+  Game(..game, state: state(game))
 }
 
 //TODO: change to `PieceLegalMoves` -> #(piece, List(Move))
@@ -200,23 +203,18 @@ pub type LegalMove {
 /// Generates all legal moves the `active_player` can make given
 /// the current state of the game
 pub fn generate_legal_moves_for_player(game: Game) -> List(LegalMove) {
-  let mappings = case game.active_color {
-    board.Black -> game.black_data.mappings
-    board.White -> game.white_data.mappings
-  }
+  let owned_squares = take_ownership_of_occupied_squares(game)
 
   let capture_builders =
-    mappings
-    |> dict.keys()
-    |> list.flat_map(with: fn(position) {
-      let assert Ok(#(piece, builders)) =
-        generate_capture_builders(game, position)
+    owned_squares
+    |> list.flat_map(with: fn(owned_square) {
+      let builders = generate_capture_builders(owned_square)
 
       builders
       |> list.map(with: fn(builder) {
         LegalMove(
-          piece:,
-          from: builder.from,
+          piece: owned_square.piece,
+          from: owned_square.position,
           middle: builder.middle,
           to: builder.to,
           captured: builder.captured,
@@ -226,17 +224,15 @@ pub fn generate_legal_moves_for_player(game: Game) -> List(LegalMove) {
 
   case capture_builders {
     [] -> {
-      mappings
-      |> dict.keys()
-      |> list.flat_map(with: fn(position) {
-        let assert Ok(#(piece, builders)) =
-          generate_simple_builders(game, position)
+      owned_squares
+      |> list.flat_map(with: fn(owned_square) {
+        let builders = generate_simple_builders(owned_square)
 
         builders
         |> list.map(with: fn(builder) {
           LegalMove(
-            piece:,
-            from: builder.from,
+            piece: owned_square.piece,
+            from: owned_square.position,
             middle: [],
             to: builder.to,
             captured: [],
@@ -249,39 +245,44 @@ pub fn generate_legal_moves_for_player(game: Game) -> List(LegalMove) {
 }
 
 pub fn generate_legal_moves_at_position(
-  game: Game,
-  from: Position,
-) -> Result(List(LegalMove), Error) {
+  owned_square: OwnedSquare,
+) -> List(LegalMove) {
+  let owned_squares = take_ownership_of_occupied_squares(owned_square.game)
+
   let any_piece_has_available_capture =
-    case game.active_color {
-      board.Black -> game.black_data.mappings
-      board.White -> game.white_data.mappings
-    }
-    |> dict.to_list()
-    |> list.any(satisfying: fn(mapping) {
-      let #(position, _) = mapping
-      case generate_capture_builders(game, position) {
-        Ok(#(_, [_, ..])) -> True
+    owned_squares
+    |> list.any(satisfying: fn(owned_square) {
+      case generate_capture_builders(owned_square) {
+        [_, ..] -> True
         _ -> False
       }
     })
 
   case any_piece_has_available_capture {
     True -> {
-      use #(piece, builders) <- result.map(generate_capture_builders(game, from))
-      builders
+      generate_capture_builders(owned_square)
       |> list.map(with: fn(builder) {
-        let CaptureBuilder(from:, middle:, to:, captured:) = builder
-        LegalMove(piece:, from:, middle:, to:, captured:)
+        let CaptureBuilder(middle:, to:, captured:) = builder
+        LegalMove(
+          piece: owned_square.piece,
+          from: owned_square.position,
+          middle:,
+          to:,
+          captured:,
+        )
       })
     }
     False -> {
-      use #(piece, builders) <- result.map(generate_simple_builders(game, from))
-
-      builders
+      generate_simple_builders(owned_square)
       |> list.map(with: fn(builder) {
-        let SimpleBuilder(from:, to:) = builder
-        LegalMove(piece:, from:, middle: [], to:, captured: [])
+        let SimpleBuilder(to:) = builder
+        LegalMove(
+          piece: owned_square.piece,
+          from: owned_square.position,
+          middle: [],
+          to:,
+          captured: [],
+        )
       })
     }
   }
@@ -293,73 +294,56 @@ pub fn create_legal_move(
   middle: List(Position),
   to: Position,
 ) -> Result(LegalMove, Error) {
-  case generate_legal_moves_at_position(game, from) {
-    Ok([]) -> Error(error.NoMovesForPiece)
-    Ok(moves) ->
+  use owned_square <- result.try(new_owned_square(game, from))
+
+  case generate_legal_moves_at_position(owned_square) {
+    [] -> Error(error.NoMovesForPiece)
+    moves ->
       moves
       |> list.find(one_that: fn(move) {
         move.from == from && move.middle == middle && move.to == to
       })
       |> result.replace_error(error.IllegalMove)
-    Error(e) -> Error(e)
   }
 }
 
 type SimpleBuilder {
-  SimpleBuilder(from: Position, to: Position)
+  SimpleBuilder(to: Position)
 }
 
-fn generate_simple_builders(
-  game: Game,
-  from: Position,
-) -> Result(#(board.Piece, List(SimpleBuilder)), Error) {
-  use piece <- result.try(
-    case board.get(game.board, at: from) |> board.get_piece() {
-      Ok(piece) if piece.color == game.active_color -> Ok(piece)
-      Ok(piece) if piece.color != game.active_color ->
-        Error(error.WrongColorPiece)
-      _ -> Error(error.ExpectedPieceOnSquare(position: from))
-    },
-  )
+fn generate_simple_builders(owned_square: OwnedSquare) -> List(SimpleBuilder) {
+  let OwnedSquare(game:, position:, piece:) = owned_square
 
-  let #(from_row, from_col) = position.position_to_row_col(from)
-  let builders =
-    case piece {
-      board.Man(color) ->
-        case color {
-          board.Black -> [#(1, 1), #(1, -1)]
-          board.White -> [#(-1, 1), #(-1, -1)]
-        }
-      board.King(_) -> [#(1, 1), #(1, -1), #(-1, 1), #(-1, -1)]
-    }
-    |> list.filter_map(fn(offset) {
-      let #(row, col) = offset
-      use to <- result.try(position.row_col_to_position(
-        from_row + row,
-        from_col + col,
-      ))
-      case board.get(game.board, to) {
-        board.Empty -> SimpleBuilder(from:, to:) |> Ok
-        _ -> Error(Nil)
+  let #(from_row, from_col) = position.position_to_row_col(position)
+  case piece {
+    board.Man(color) ->
+      case color {
+        board.Black -> [#(1, 1), #(1, -1)]
+        board.White -> [#(-1, 1), #(-1, -1)]
       }
-    })
-  #(piece, builders) |> Ok
+    board.King(_) -> [#(1, 1), #(1, -1), #(-1, 1), #(-1, -1)]
+  }
+  |> list.filter_map(fn(offset) {
+    let #(row, col) = offset
+    use to <- result.try(position.row_col_to_position(
+      from_row + row,
+      from_col + col,
+    ))
+    case board.get(game.board, to) {
+      board.Empty -> SimpleBuilder(to:) |> Ok
+      _ -> Error(Nil)
+    }
+  })
 }
 
 type CaptureBuilder {
-  CaptureBuilder(
-    from: Position,
-    middle: List(Position),
-    to: Position,
-    captured: List(Position),
-  )
+  CaptureBuilder(middle: List(Position), to: Position, captured: List(Position))
 }
 
 type CaptureSearch {
   CaptureSearch(
     game: Game,
     piece: board.Piece,
-    from: Position,
     current: Position,
     path: List(Position),
     visited: Set(Position),
@@ -368,48 +352,27 @@ type CaptureSearch {
   )
 }
 
-fn generate_capture_builders(
-  game: Game,
-  from: Position,
-) -> Result(#(board.Piece, List(CaptureBuilder)), Error) {
-  use piece <- result.try(
-    case board.get(game.board, at: from) |> board.get_piece() {
-      Ok(piece) if piece.color == game.active_color -> Ok(piece)
-      Ok(piece) if piece.color != game.active_color ->
-        Error(error.WrongColorPiece)
-      _ -> Error(error.ExpectedPieceOnSquare(position: from))
-    },
-  )
+fn generate_capture_builders(owned_square: OwnedSquare) -> List(CaptureBuilder) {
+  let OwnedSquare(game:, position:, piece:) = owned_square
 
-  let builders =
-    generate_capture_builders_loop(
-      CaptureSearch(
-        game:,
-        piece:,
-        from:,
-        current: from,
-        path: [],
-        visited: set.new(),
-        captured: [],
-        acc: [],
-      ),
-    )
-  #(piece, builders) |> Ok
+  generate_capture_builders_loop(
+    CaptureSearch(
+      game:,
+      piece:,
+      current: position,
+      path: [],
+      visited: set.new(),
+      captured: [],
+      acc: [],
+    ),
+  )
 }
 
 fn generate_capture_builders_loop(
   capture_search: CaptureSearch,
 ) -> List(CaptureBuilder) {
-  let CaptureSearch(
-    game:,
-    piece:,
-    from:,
-    current:,
-    path:,
-    visited:,
-    captured:,
-    acc:,
-  ) = capture_search
+  let CaptureSearch(game:, piece:, current:, path:, visited:, captured:, acc:) =
+    capture_search
   let #(from_row, from_col) = position.position_to_row_col(current)
   let next_positions =
     // could be moved outside to the wrapper so passing in piece isnt necessary
@@ -463,7 +426,6 @@ fn generate_capture_builders_loop(
     [], [], [] -> []
     [], [to, ..rest], captured -> [
       CaptureBuilder(
-        from:,
         middle: list.reverse(rest),
         to:,
         captured: list.reverse(captured),

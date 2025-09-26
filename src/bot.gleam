@@ -1,6 +1,5 @@
 import board
 import game.{type Game}
-import gleam/dict
 import gleam/erlang/process
 import gleam/int
 import gleam/list
@@ -54,7 +53,7 @@ pub fn search(game: Game, depth: Int) -> Result(game.LegalMove, Nil) {
     |> list.map(with: fn(move) {
       let reply = process.new_subject()
       process.spawn(fn() {
-        let assert Ok(game) = game.move(game, move)
+        let game = game.move(game, move)
 
         let score = negascout(game, depth)
         process.send(reply, #(score, move))
@@ -143,7 +142,7 @@ fn evaluate_moves(
     // all moves evaluated, return the highest score that can be guaranteed
     [] -> alpha
     [move, ..rest] -> {
-      let assert Ok(new_game) = game.move(game, move)
+      let new_game = game.move(game, move)
 
       let score = score_game(new_game, alpha, beta, depth, is_first_move)
 
@@ -232,13 +231,8 @@ fn score_game(
 /// 
 /// TODO: might add weighting for kings in the future
 pub fn evaluate(game: Game) -> Int {
-  let #(black_mappings, white_mappings) = #(
-    game.black_data.mappings,
-    game.white_data.mappings,
-  )
-
-  let black_piece_count = dict.size(black_mappings)
-  let white_piece_count = dict.size(white_mappings)
+  let black_piece_count = game.board |> board.piece_count(for: board.Black)
+  let white_piece_count = game.board |> board.piece_count(for: board.White)
 
   let multiplier = case game.active_color {
     board.Black -> 1

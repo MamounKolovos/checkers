@@ -64,6 +64,20 @@ pub opaque type Board {
   Board(iv.Array(Square))
 }
 
+pub fn piece_count(in board: Board, for color: Color) -> Int {
+  let Board(squares) = board
+  squares
+  |> iv.filter(keeping: fn(square) {
+    case square {
+      Occupied(piece) if piece.color == color -> {
+        True
+      }
+      _ -> False
+    }
+  })
+  |> iv.length()
+}
+
 pub fn empty() -> Board {
   Board(iv.repeat(Empty, 32))
 }
